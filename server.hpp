@@ -8,6 +8,7 @@
 #include "logger.hpp"
 #include "config.hpp"
 #include "command.hpp"
+#include "gamemanager.hpp"
 
 using boost::asio::ip::tcp;
 
@@ -15,8 +16,9 @@ using boost::asio::ip::tcp;
 class Session: public std::enable_shared_from_this<Session>{
 
     public:
-        explicit Session(tcp::socket socket, Logger& logger);
+        explicit Session(tcp::socket socket, Logger& logger, GameManager& gm);
 
+        void do_write(const std::string& message);
 
         tcp::socket& socket();
 
@@ -31,12 +33,11 @@ class Session: public std::enable_shared_from_this<Session>{
 
         void do_read();
 
-        void do_write(const std::string& message);
-
         void handle_command(const GameCommand& cmd);
 
         tcp::socket _socket;
         Logger& _logger;
+        GameManager& _game_manager;
         boost::asio::streambuf _buffer;
         
 
@@ -55,6 +56,8 @@ class ChessServer{
 
         tcp::acceptor _acceptor;
         Logger& _logger;
+
+        GameManager _game_manager;
 
         std::vector<std::shared_ptr<Session>> _sessions;
 };

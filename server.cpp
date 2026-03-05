@@ -2,8 +2,8 @@
 #include <iostream>
 #include <string>
 
-Session::Session(tcp::socket socket_, Logger& logger_)
-    : _socket(std::move(socket_)), _logger(logger_) {}
+Session::Session(tcp::socket socket_, Logger& logger_, GameManager& gm)
+    : _socket(std::move(socket_)), _logger(logger_), _game_manager(gm) {}
 
 
 ChessServer::ChessServer(boost::asio::io_context& io, const ServerSettings& config, Logger& logger)
@@ -82,48 +82,37 @@ void Session::do_write(const std::string& message){
 
 
 void Session::handle_command(const GameCommand& cmd) {
-    // 1. Если это попытка авторизации
     if (cmd.type == "auth") {
-        this->_player_id = cmd.player_id;
-        _logger.log("Player " + std::to_string(_player_id) + " is now online.");
-        do_write(Protocol::serialize("status", "Auth success. Welcome!"));
-        return;
-    }
-
-    // 2. Проверка: авторизован ли пользователь для любых других действий?
-    if (_player_id == 0) {
-        _logger.err("Unauthorized action attempt from unknown client.");
-        do_write(Protocol::serialize("error", "Access denied. Please login first."));
-        return;
-    }
-
-    // 3. Если авторизован, обрабатываем игровые команды
-    if (cmd.type == "move") {
-        _logger.log("Player " + std::to_string(_player_id) + " moves: " + cmd.from + " -> " + cmd.to);
-        // Здесь позже будет вызов _game_board.make_move(...)
-        do_write(Protocol::serialize("ok", "Move received"));
+        _player_id = cmd.player_id;
+        _game_manager.reg_player(_player_id, shared_from_this());
+        _logger.log("Player " + std::to_string(_player_id) + " registered.");
+        do_write("{\"status\":\"ok\"}\n");
     } 
-    else {
-        _logger.err("Unknown command: " + cmd.type);
+    else if (cmd.type == "move") {
+        _logger.log("Move from " + std::to_string(_player_id));
+        
+        
+        std::string msg = "{\"type\":\"opponent_move\", \"from\":\"" + cmd.from + "\", \"to\":\"" + cmd.to + "\"}\n";
+        _game_manager.broadcast(msg, _player_id); 
     }
 }
-
-void ChessServer::start_accept(){
-
-    auto new_session = std::make_shared<Session>(tcp::socket(static_cast<boost::asio::io_context&>(_acceptor.get_executor().context())), _logger);
+void ChessServer::start_accept() {
+    auto new_session = std::make_shared<Session>(
+        tcp::socket(static_cast<boost::asio::io_context&>(_acceptor.get_executor().context())), 
+        _logger, 
+        _game_manager
+    );
 
     _acceptor.async_accept(new_session->socket(),
-[this, new_session](boost::system::error_code ec){
-    if (!ec){
-        _sessions.push_back(new_session);
-        new_session->start(); // посмотреть на переполнение  stack ! 
-    }
-    else{
-        _logger.err("Accept error: " + ec.message());
-    }
-
-    start_accept(); 
-});
+        [this, new_session](boost::system::error_code ec) {
+            if (!ec) {
+                _sessions.push_back(new_session);
+                new_session->start();
+            } else {
+                _logger.err("Accept error: " + ec.message());
+            }
+            start_accept(); 
+        });
 }
 
 
