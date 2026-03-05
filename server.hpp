@@ -20,17 +20,25 @@ class Session: public std::enable_shared_from_this<Session>{
 
         tcp::socket& socket();
 
+
         void start();
 
     private:
+
+        int _player_id = 0;
+
+        int _id;
 
         void do_read();
 
         void do_write(const std::string& message);
 
+        void handle_command(const GameCommand& cmd);
+
         tcp::socket _socket;
         Logger& _logger;
         boost::asio::streambuf _buffer;
+        
 
 };
 

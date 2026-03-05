@@ -1,5 +1,6 @@
 #include "server.hpp"
 #include <iostream>
+#include <string>
 
 Session::Session(tcp::socket socket_, Logger& logger_)
     : _socket(std::move(socket_)), _logger(logger_) {}
@@ -28,26 +29,43 @@ void Session::start(){
 void Session::do_read() {
     auto self(shared_from_this());
     boost::asio::async_read_until(_socket, _buffer, '\n',
-    [this, self](boost::system::error_code ec, std::size_t length) {
-        if (!ec) {
-            std::string data;
-            std::istream is(&_buffer);
-            std::getline(is, data);
-
-            GameCommand cmd = Protocol::parse(data);
-
-            if (cmd.is_valid) {
-                _logger.log("Valid command: " + cmd.type + " from " + cmd.from);
+        [this, self](boost::system::error_code ec, std::size_t length) {
+            if (!ec) {
                 
-                std::string response = Protocol::serialize("ok", "Command received");
-                do_write(response);
+                std::string data(
+                    boost::asio::buffers_begin(_buffer.data()),
+                    boost::asio::buffers_begin(_buffer.data()) + length
+                );
+                _buffer.consume(length); 
+
+                
+                _logger.debug("Received raw data: " + data);
+
+                try {
+                    
+                    auto command = Protocol::parse(data);
+                    
+                    
+                    _logger.log("Command processed: type=" + command.type + " from=" + std::to_string(command.player_id));
+
+                    
+                    handle_command(command);
+
+                } catch (const std::exception& e) {
+                    _logger.err("JSON Parse Error: " + std::string(e.what()));
+                    do_write(Protocol::serialize("error", "Invalid JSON format"));
+                }
+
+                
+                do_read();
             } else {
-                _logger.err("Invalid JSON received: " + data);
-                do_write(Protocol::serialize("error", "Invalid format"));
+                if (ec == boost::asio::error::eof) {
+                    _logger.log("Client disconnected gracefully.");
+                } else {
+                    _logger.err("Read error: " + ec.message());
+                }
             }
-            do_read(); 
-        }
-    });
+        });
 }
 
 
@@ -62,6 +80,33 @@ void Session::do_write(const std::string& message){
 });
 }
 
+
+void Session::handle_command(const GameCommand& cmd) {
+    // 1. Если это попытка авторизации
+    if (cmd.type == "auth") {
+        this->_player_id = cmd.player_id;
+        _logger.log("Player " + std::to_string(_player_id) + " is now online.");
+        do_write(Protocol::serialize("status", "Auth success. Welcome!"));
+        return;
+    }
+
+    // 2. Проверка: авторизован ли пользователь для любых других действий?
+    if (_player_id == 0) {
+        _logger.err("Unauthorized action attempt from unknown client.");
+        do_write(Protocol::serialize("error", "Access denied. Please login first."));
+        return;
+    }
+
+    // 3. Если авторизован, обрабатываем игровые команды
+    if (cmd.type == "move") {
+        _logger.log("Player " + std::to_string(_player_id) + " moves: " + cmd.from + " -> " + cmd.to);
+        // Здесь позже будет вызов _game_board.make_move(...)
+        do_write(Protocol::serialize("ok", "Move received"));
+    } 
+    else {
+        _logger.err("Unknown command: " + cmd.type);
+    }
+}
 
 void ChessServer::start_accept(){
 
