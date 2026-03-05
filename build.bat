@@ -1,0 +1,1 @@
+g++ main.cpp server.cpp command.cpp config.cpp logger.cpp -o server.exe -I"D:\practice\Cpp\Chess\boost_1_90_0" -L"D:\practice\Cpp\Chess\boost_1_90_0\stage\lib" -lboost_thread -lboost_chrono -lboost_atomic -lws2_32 -lmswsock
