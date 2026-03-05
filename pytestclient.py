@@ -1,46 +1,70 @@
 import socket
 import json
+import threading
+import sys
+
+def receive_messages(sock):
+    """Функция, которая постоянно слушает сервер в отдельном потоке"""
+    while True:
+        try:
+            data = sock.recv(1024).decode('utf-8')
+            if not data:
+                print("\n[Система] Соединение разорвано сервером.")
+                break
+            
+            # Сообщения могут приходить склеенными, если их много
+            for line in data.strip().split('\n'):
+                if line:
+                    payload = json.loads(line)
+                    print(f"\n[Сервер]: {json.dumps(payload, indent=2, ensure_ascii=False)}")
+                    print("Введите команду: ", end="", flush=True)
+                    
+        except Exception as e:
+            print(f"\n[Ошибка чтения]: {e}")
+            break
 
 def start_client():
     host = '127.0.0.1'
     port = 8080
 
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        # Создаем TCP сокет
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((host, port))
-            print(f"Успешное подключение к {host}:{port}")
-            print("Команды: auth, move, exit")
-
-            while True:
-                cmd_type = input("\nВведите тип команды (auth/move/exit): ").strip()
-                
-                if cmd_type == "exit":
-                    break
-
-                # Формируем данные в зависимости от команды
-                data = {"type": cmd_type}
-                
-                if cmd_type == "auth":
-                    data["player_id"] = int(input("Ваш Player ID (число): "))
-                elif cmd_type == "move":
-                    data["player_id"] = int(input("Ваш Player ID: "))
-                    data["from"] = input("Откуда (например, e2): ")
-                    data["to"] = input("Куда (например, e4): ")
-                
-                # Отправляем JSON + символ новой строки \n
-                # Сервер использует async_read_until с разделителем \n
-                message = json.dumps(data) + "\n"
-                s.sendall(message.encode('utf-8'))
-
-                # Ждем ответ от сервера
-                response = s.recv(1024).decode('utf-8')
-                print(f"Ответ сервера: {response.strip()}")
-
-    except ConnectionRefusedError:
-        print("Ошибка: Сервер не запущен!")
+        sock.connect((host, port))
+        print(f"Подключено к {host}:{port}")
     except Exception as e:
-        print(f"Произошла ошибка: {e}")
+        print(f"Не удалось подключиться: {e}")
+        return
+
+    # Запускаем поток для прослушивания сервера
+    threading.Thread(target=receive_messages, args=(sock,), daemon=True).start()
+
+    print("Команды: auth, move, exit")
+    
+    try:
+        while True:
+            cmd_type = input("Введите команду: ").strip()
+            
+            if cmd_type == "exit":
+                break
+            
+            if not cmd_type: continue
+
+            data = {"type": cmd_type}
+            if cmd_type == "auth":
+                data["player_id"] = int(input("Ваш Player ID: "))
+            elif cmd_type == "move":
+                # Мы не спрашиваем player_id снова, сервер и так нас помнит по сессии
+                data["from"] = input("Откуда: ")
+                data["to"] = input("Куда: ")
+            
+            # Отправляем JSON с символом переноса строки
+            message = json.dumps(data) + "\n"
+            sock.sendall(message.encode('utf-8'))
+            
+    except KeyboardInterrupt:
+        print("\nВыход...")
+    finally:
+        sock.close()
 
 if __name__ == "__main__":
     start_client()

@@ -85,17 +85,14 @@ void Session::handle_command(const GameCommand& cmd) {
     if (cmd.type == "auth") {
         _player_id = cmd.player_id;
         _game_manager.reg_player(_player_id, shared_from_this());
-        _logger.log("Player " + std::to_string(_player_id) + " registered.");
-        do_write("{\"status\":\"ok\"}\n");
     } 
     else if (cmd.type == "move") {
-        _logger.log("Move from " + std::to_string(_player_id));
-        
-        
-        std::string msg = "{\"type\":\"opponent_move\", \"from\":\"" + cmd.from + "\", \"to\":\"" + cmd.to + "\"}\n";
-        _game_manager.broadcast(msg, _player_id); 
+        _game_manager.handle_move(_player_id, cmd.from, cmd.to);
     }
 }
+
+
+
 void ChessServer::start_accept() {
     auto new_session = std::make_shared<Session>(
         tcp::socket(static_cast<boost::asio::io_context&>(_acceptor.get_executor().context())), 
