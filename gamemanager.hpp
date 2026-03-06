@@ -13,6 +13,7 @@ class Session;
 struct Match {
     int white_id;
     int black_id;
+    int rang_div;
 };
 
 class GameManager {
