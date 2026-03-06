@@ -12,7 +12,7 @@ def receive_messages(sock):
                 print("\n[Система] Соединение разорвано сервером.")
                 break
             
-            # Сообщения могут приходить склеенными, если их много
+            
             for line in data.strip().split('\n'):
                 if line:
                     payload = json.loads(line)
@@ -35,7 +35,7 @@ def start_client():
         print(f"Не удалось подключиться: {e}")
         return
 
-    # Запускаем поток для прослушивания сервера
+    # поток для прослушивания сервера
     threading.Thread(target=receive_messages, args=(sock,), daemon=True).start()
 
     print("Команды: auth, move, exit")
@@ -53,7 +53,6 @@ def start_client():
             if cmd_type == "auth":
                 data["player_id"] = int(input("Ваш Player ID: "))
             elif cmd_type == "move":
-                # Мы не спрашиваем player_id снова, сервер и так нас помнит по сессии
                 data["from"] = input("Откуда: ")
                 data["to"] = input("Куда: ")
             
