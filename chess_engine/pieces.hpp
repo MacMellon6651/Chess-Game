@@ -14,12 +14,12 @@ namespace PieceType {
     static constexpr uint8_t Queen  = 4;
     static constexpr uint8_t King   = 5;
 
-    static constexpr const char* to_char(uint8_t type, uint8_t color) {
-        const char pieces[2][6] = {
+    static constexpr char to_char(uint8_t type, uint8_t color) {
+        constexpr char pieces[2][6] = {
             {'P', 'N', 'B', 'R', 'Q', 'K'},  // Белые
             {'p', 'n', 'b', 'r', 'q', 'k'}   // Чёрные
         };
-        return &pieces[color][type];
+        return pieces[color][type];
     }
 }
 

@@ -171,7 +171,10 @@ bool Position::apply_move(const Move& move) {
     uint8_t old_en_passant = _en_passant;
     bool old_w_l = _w_l_castling, old_w_s = _w_s_castling;
     bool old_b_l = _b_l_castling, old_b_s = _b_s_castling;
+    float old_move_ctr = _move_ctr;
     float old_fifty = _fifty_moves_ctr;
+    ZobristHash old_hash = _hash;
+    std::vector<ZobristHash> old_history = _history;
     
     // Перемещаем фигуру
     _remove_piece(move.from, move.attacker_type, move.attacker_side);
@@ -234,18 +237,21 @@ bool Position::apply_move(const Move& move) {
     // Обновляем права на рокировку
     _update_castling_rights(move.from);
     
+    // Запоминаем старый en passant для проверки
+    uint8_t old_ep = _en_passant;
+    
     // Обновляем en passant
     if (move.flag != Move::Flag::PawnLongMove) {
         if (_en_passant != 255) {
-            _hash.invert_piece(_en_passant, PieceType::Pawn, PieceColor::inverse(side_to_move()));
+            _hash.invert_piece(_en_passant, PieceType::Pawn, PieceColor::inverse(move.attacker_side));
             _en_passant = 255;
         }
     } else {
         _en_passant = (move.from + move.to) / 2;
-        _hash.invert_piece(_en_passant, PieceType::Pawn, PieceColor::inverse(side_to_move()));
+        _hash.invert_piece(_en_passant, PieceType::Pawn, PieceColor::inverse(move.attacker_side));
     }
     
-    // Обновляем счётчик ходов
+    // Обновляем счётчик ходов (ПОСЛЕ того как использовали старый side_to_move для en passant)
     _move_ctr += 0.5f;
     _hash.invert_move();
     
@@ -258,8 +264,9 @@ bool Position::apply_move(const Move& move) {
     if (is_irreversible) _history.clear();
     _history.push_back(_hash);
     
-    // Проверяем, не остался ли король под шахом
-    if (MoveGen::is_check(_pieces, side_to_move())) {
+    // Проверяем, не остался ли король под шахом (используем сторону, которая ТОЛЬКО ЧТО СДЕЛАЛА ХОД)
+    uint8_t side_that_moved = move.attacker_side;
+    if (MoveGen::is_check(_pieces, side_that_moved)) {
         // Откатываем изменения
         _pieces = old_pieces;
         _en_passant = old_en_passant;
@@ -267,10 +274,10 @@ bool Position::apply_move(const Move& move) {
         _w_s_castling = old_w_s;
         _b_l_castling = old_b_l;
         _b_s_castling = old_b_s;
+        _move_ctr = old_move_ctr;
         _fifty_moves_ctr = old_fifty;
-        _hash = ZobristHash(_pieces, side_to_move() == PieceColor::Black,
-                            _w_l_castling, _w_s_castling,
-                            _b_l_castling, _b_s_castling);
+        _hash = old_hash;
+        _history = old_history;
         return false;
     }
     

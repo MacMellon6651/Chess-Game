@@ -27,7 +27,12 @@ public:
     const Pieces& pieces() const { return _pieces; }
     
     uint8_t side_to_move() const { 
-        return (static_cast<int>(_move_ctr) % 2 == 0) ? PieceColor::White : PieceColor::Black;
+        // move_ctr: 0.0 = ход белых, 0.5 = ход чёрных, 1.0 = снова белые
+        if (std::abs(_move_ctr - static_cast<float>(static_cast<int>(_move_ctr))) < 0.01f) {
+            return PieceColor::White;
+        } else {
+            return PieceColor::Black;
+        }
     }
     
     uint8_t en_passant() const { return _en_passant; }
