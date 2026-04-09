@@ -42,7 +42,7 @@ static nlohmann::json make_ok(const std::string& message) {
     return j;
 }
 
-// ==================== Session ====================
+//  Session 
 
 Session::Session(tcp::socket socket_, ChessServer& server)
     : _socket(std::move(socket_))
@@ -154,7 +154,7 @@ void Session::do_write() {
             }));
 }
 
-// ==================== GameRoom ====================
+//                  GameRoom
 
 GameRoom::GameRoom(std::shared_ptr<Session> a, std::shared_ptr<Session> b)
     : _a(std::move(a)), _b(std::move(b)) {}
@@ -400,7 +400,7 @@ std::string GameRoom::get_position_fen() const {
     return _position.get_fen();
 }
 
-// ==================== ChessServer ====================
+//  ChessServer 
 
 ChessServer::ChessServer(boost::asio::io_context& io, const ServerSettings& config)
     : _acceptor(io, tcp::endpoint(boost::asio::ip::make_address(config.host), config.port)) {
@@ -410,8 +410,8 @@ ChessServer::ChessServer(boost::asio::io_context& io, const ServerSettings& conf
 
 void ChessServer::start_accept() {
     auto new_session = std::make_shared<Session>(
-        tcp::socket(_acceptor.get_executor().context()),
-        *this);
+    tcp::socket(_acceptor.get_executor()),
+    *this);
 
     _acceptor.async_accept(new_session->socket(),
         [this, new_session](boost::system::error_code ec) {
