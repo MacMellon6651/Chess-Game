@@ -39,45 +39,42 @@ static void setup_windows_console_utf8() {
 
 // Функция для обновления доски из FEN строки
 void update_board_from_fen(std::array<std::array<std::string, 8>, 8>& board, const std::string& fen) {
-    // Парсим только часть с фигурами (до первого пробела)
     std::string board_part = fen;
     size_t space_pos = fen.find(' ');
     if (space_pos != std::string::npos) {
         board_part = fen.substr(0, space_pos);
     }
     
-    int y = 7;  // начинаем с 8-й строки (индекс 7)
+    // В FEN первая строка - это 8-я горизонталь (чёрные фигуры)
+    int y = 7;  // индекс строки в доске (0-7)
     int x = 0;
     
     for (char ch : board_part) {
         if (ch == '/') {
-            // Переход на следующую строку
             x = 0;
-            y--;
+            y--;  // переходим на следующую строку вниз
         } else if (std::isdigit(ch)) {
-            // Пропуск пустых клеток
-            x += (ch - '0');
+            int empty = ch - '0';
+            for (int i = 0; i < empty; ++i) {
+                board[y][x] = "·";
+                x++;
+            }
         } else {
-            // Устанавливаем фигуру на доску
-            int row = y;
-            int col = x;
-            
+            // FEN: заглавные = белые, строчные = чёрные
             switch (ch) {
-                // Белые фигуры
-                case 'P': board[row][col] = u8"♙"; break;
-                case 'N': board[row][col] = u8"♘"; break;
-                case 'B': board[row][col] = u8"♗"; break;
-                case 'R': board[row][col] = u8"♖"; break;
-                case 'Q': board[row][col] = u8"♕"; break;
-                case 'K': board[row][col] = u8"♔"; break;
-                // Чёрные фигуры
-                case 'p': board[row][col] = u8"♟"; break;
-                case 'n': board[row][col] = u8"♞"; break;
-                case 'b': board[row][col] = u8"♝"; break;
-                case 'r': board[row][col] = u8"♜"; break;
-                case 'q': board[row][col] = u8"♛"; break;
-                case 'k': board[row][col] = u8"♚"; break;
-                default: board[row][col] = "·"; break;
+                case 'P': board[y][x] = u8"♙"; break;  // белая пешка
+                case 'N': board[y][x] = u8"♘"; break;  // белый конь
+                case 'B': board[y][x] = u8"♗"; break;  // белый слон
+                case 'R': board[y][x] = u8"♖"; break;  // белая ладья
+                case 'Q': board[y][x] = u8"♕"; break;  // белый ферзь
+                case 'K': board[y][x] = u8"♔"; break;  // белый король
+                case 'p': board[y][x] = u8"♟"; break;  // чёрная пешка
+                case 'n': board[y][x] = u8"♞"; break;  // чёрный конь
+                case 'b': board[y][x] = u8"♝"; break;  // чёрный слон
+                case 'r': board[y][x] = u8"♜"; break;  // чёрная ладья
+                case 'q': board[y][x] = u8"♛"; break;  // чёрный ферзь
+                case 'k': board[y][x] = u8"♚"; break;  // чёрный король
+                default: board[y][x] = "·"; break;
             }
             x++;
         }
@@ -97,17 +94,26 @@ struct ClientUi {
     }
 
     void reset_board() {
-        board = {{
-            {u8"♜", u8"♞", u8"♝", u8"♛", u8"♚", u8"♝", u8"♞", u8"♜"},
-            {u8"♟", u8"♟", u8"♟", u8"♟", u8"♟", u8"♟", u8"♟", u8"♟"},
-            {"·", "·", "·", "·", "·", "·", "·", "·"},
-            {"·", "·", "·", "·", "·", "·", "·", "·"},
-            {"·", "·", "·", "·", "·", "·", "·", "·"},
-            {"·", "·", "·", "·", "·", "·", "·", "·"},
-            {u8"♙", u8"♙", u8"♙", u8"♙", u8"♙", u8"♙", u8"♙", u8"♙"},
-            {u8"♖", u8"♘", u8"♗", u8"♕", u8"♔", u8"♗", u8"♘", u8"♖"}
-        }};
-    }
+    // Правильная расстановка: белые внизу (ряд 0-1), чёрные вверху (ряд 6-7)
+    board = {{
+        // 8-я горизонталь (индекс 7) - чёрные фигуры
+        {u8"♜", u8"♞", u8"♝", u8"♛", u8"♚", u8"♝", u8"♞", u8"♜"},
+        // 7-я горизонталь (индекс 6) - чёрные пешки
+        {u8"♟", u8"♟", u8"♟", u8"♟", u8"♟", u8"♟", u8"♟", u8"♟"},
+        // 6-я горизонталь (индекс 5)
+        {"·", "·", "·", "·", "·", "·", "·", "·"},
+        // 5-я горизонталь (индекс 4)
+        {"·", "·", "·", "·", "·", "·", "·", "·"},
+        // 4-я горизонталь (индекс 3)
+        {"·", "·", "·", "·", "·", "·", "·", "·"},
+        // 3-я горизонталь (индекс 2)
+        {"·", "·", "·", "·", "·", "·", "·", "·"},
+        // 2-я горизонталь (индекс 1) - белые пешки
+        {u8"♙", u8"♙", u8"♙", u8"♙", u8"♙", u8"♙", u8"♙", u8"♙"},
+        // 1-я горизонталь (индекс 0) - белые фигуры
+        {u8"♖", u8"♘", u8"♗", u8"♕", u8"♔", u8"♗", u8"♘", u8"♖"}
+    }};
+}
 
     // Обновление всей доски из FEN
     void update_board_from_fen(const std::string& fen) {
@@ -135,40 +141,35 @@ struct ClientUi {
     }
 
     void render() const {
-        std::cout << "\x1b[2J\x1b[H";
-        std::cout << "Chess Client | nick: " << nick << " | status: " << status << "\n\n";
+    // Очистка экрана и истории прокрутки
+    std::cout << "\x1b[2J\x1b[H\x1b[3J";
+    std::cout.flush();
     
-        
-        std::cout << "    a  b  c  d  e  f  g  h \n";
-        std::cout << "  +------------------------+\n";
-        for (int r = 0; r < 8; ++r) {
-            std::cout << (8 - r) << " | ";
-            for (int c = 0; c < 8; ++c) {
-                std::cout << board[r][c] << "  ";
-            }
-            std::cout << "|\n";
-        }
-        std::cout << "  +------------------------+\n\n";
+    std::cout << "Chess Client | nick: " << nick << " | status: " << status << "\n\n";
     
-        
-        std::cout << "Chat / Events\n";
-        std::cout << "----------------------------------------\n";
-        
-        
-        size_t start = feed.size() > kFeedMax ? feed.size() - kFeedMax : 0;
-        for (size_t i = start; i < feed.size(); ++i) {
-            std::cout << feed[i] << "\n";
+    std::cout << "    a  b  c  d  e  f  g  h \n";
+    std::cout << "  +------------------------+\n";
+    for (int r = 7; r >= 0; --r) {
+        std::cout << (1 + r) << " | ";
+        for (int c = 0; c < 8; ++c) {
+            std::cout << board[r][c] << "  ";
         }
-        
-        
-        size_t empty_lines = kFeedMax - (feed.size() - start);
-        for (size_t i = 0; i < empty_lines; ++i) {
-            std::cout << "\n";
-        }
-        
-        std::cout << "----------------------------------------\n";
-        std::cout << "\nCommands: /queue | /leave | /chat <text> | /move <from> <to> | /draw | /draw accept | /draw decline | /quit\n";
+        std::cout << "|\n";
     }
+    std::cout << "  +------------------------+\n\n";
+    
+    std::cout << "Chat / Events\n";
+    std::cout << "----------------------------------------\n";
+    
+    size_t start = feed.size() > kFeedMax ? feed.size() - kFeedMax : 0;
+    for (size_t i = start; i < feed.size(); ++i) {
+        std::cout << feed[i] << "\n";
+    }
+    
+    std::cout << "----------------------------------------\n";
+    std::cout << "\nCommands: /queue | /leave | /chat <text> | /move <from> <to> | /draw | /draw accept | /draw decline | /quit\n";
+    std::cout << "> " << std::flush;
+}
 };
 
 static void process_incoming_line(ClientUi& ui, const std::string& line) {
