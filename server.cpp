@@ -2,6 +2,23 @@
 #include <iostream>
 #include <algorithm>
 #include <cmath>
+#include "chess_engine/move_gen.hpp"
+
+// Вспомогательные функции для преобразования координат
+uint8_t algebraic_to_index(const std::string& sq) {
+    if (sq.length() < 2) return 255;
+    int file = sq[0] - 'a';
+    int rank = sq[1] - '1';
+    if (file < 0 || file > 7 || rank < 0 || rank > 7) return 255;
+    return rank * 8 + file;
+}
+
+std::string index_to_algebraic(uint8_t idx) {
+    if (idx >= 64) return "";
+    char file = 'a' + (idx % 8);
+    char rank = '1' + (idx / 8);
+    return std::string({file, rank});
+}
 
 static nlohmann::json make_event(const std::string& event, const nlohmann::json& data = nlohmann::json::object()) {
     nlohmann::json j;
@@ -25,24 +42,16 @@ static nlohmann::json make_ok(const std::string& message) {
     return j;
 }
 
+// ==================== Session ====================
+
 Session::Session(tcp::socket socket_, ChessServer& server)
     : _socket(std::move(socket_))
     , _strand(_socket.get_executor())
     , _server(server) {}
 
+tcp::socket& Session::socket() { return _socket; }
 
-ChessServer::ChessServer(boost::asio::io_context& io, const ServerSettings& config)
-    : _acceptor(io, tcp::endpoint(boost::asio::ip::make_address(config.host), config.port))
-    {
-        BOOST_LOG_TRIVIAL(info) << "Server initialized on " << config.host << ":" << config.port;
-        start_accept();
-    }
-
-tcp::socket& Session::socket(){
-    return _socket;
-}
-
-void Session::start(){
+void Session::start() {
     BOOST_LOG_TRIVIAL(info) << "New session started!";
     do_read();
 }
@@ -51,7 +60,7 @@ void Session::send(const nlohmann::json& msg) {
     auto payload = Protocol::serialize_json(msg);
     auto self = shared_from_this();
     boost::asio::dispatch(_strand, [this, self, payload = std::move(payload)]() mutable {
-        const bool writing = !_outbox.empty();
+        bool writing = !_outbox.empty();
         _outbox.push_back(std::move(payload));
         if (!writing) do_write();
     });
@@ -74,7 +83,6 @@ void Session::handle_command(const std::string& raw, const GameCommand& cmd) {
         send(make_ok("pong"));
         return;
     }
-
     if (cmd.type == "auth") {
         _server.handle_auth(self, cmd);
         return;
@@ -103,33 +111,29 @@ void Session::handle_command(const std::string& raw, const GameCommand& cmd) {
     send(make_error("Unknown command type"));
 }
 
-
-// беск реккурсия (база реккурсия) (или цикл с break)
-
 void Session::do_read() {
     auto self(shared_from_this());
     boost::asio::async_read_until(_socket, _buffer, '\n',
-    [this, self](boost::system::error_code ec, std::size_t length) {
-        if (!ec) {
-            std::string data;
-            std::istream is(&_buffer);
-            std::getline(is, data);
+        [this, self](boost::system::error_code ec, std::size_t length) {
+            if (!ec) {
+                std::string data;
+                std::istream is(&_buffer);
+                std::getline(is, data);
 
-            GameCommand cmd = Protocol::parse(data);
-
-            if (cmd.is_valid) {
-                BOOST_LOG_TRIVIAL(info) << "Valid command: " << cmd.type;
-                handle_command(data, cmd);
+                GameCommand cmd = Protocol::parse(data);
+                if (cmd.is_valid) {
+                    BOOST_LOG_TRIVIAL(info) << "Valid command: " << cmd.type;
+                    handle_command(data, cmd);
+                } else {
+                    BOOST_LOG_TRIVIAL(error) << "Invalid JSON received: " << data;
+                    send(make_error("Invalid format"));
+                }
+                do_read();
             } else {
-                BOOST_LOG_TRIVIAL(error) << "Invalid JSON received: " << data;
-                send(make_error("Invalid format"));
+                BOOST_LOG_TRIVIAL(info) << "Session read ended: " << ec.message();
+                _server.on_disconnect(self);
             }
-            do_read(); 
-        } else {
-            BOOST_LOG_TRIVIAL(info) << "Session read ended: " << ec.message();
-            _server.on_disconnect(self);
-        }
-    });
+        });
 }
 
 void Session::do_write() {
@@ -150,8 +154,238 @@ void Session::do_write() {
             }));
 }
 
+// ==================== GameRoom ====================
+
 GameRoom::GameRoom(std::shared_ptr<Session> a, std::shared_ptr<Session> b)
     : _a(std::move(a)), _b(std::move(b)) {}
+
+void GameRoom::broadcast(const nlohmann::json& msg) {
+    if (_a) _a->send(msg);
+    if (_b) _b->send(msg);
+}
+
+void GameRoom::start() {
+    // Отправляем начальную позицию доски
+    nlohmann::json board_data;
+    board_data["fen"] = _position.get_fen();
+    board_data["you_are"] = "white";
+    
+    if (_a) {
+        _a->send(make_event("match_found", {{"opponent", _b ? _b->nick() : ""}, {"board", board_data}}));
+        board_data["you_are"] = "black";
+    }
+    if (_b) {
+        _b->send(make_event("match_found", {{"opponent", _a ? _a->nick() : ""}, {"board", board_data}}));
+    }
+    
+    BOOST_LOG_TRIVIAL(info) << "Game started between " << (_a ? _a->nick() : "?") 
+                            << " and " << (_b ? _b->nick() : "?");
+}
+
+void GameRoom::on_chat(const std::shared_ptr<Session>& from, const std::string& text) {
+    auto other = opponent_of(from);
+    if (!other) return;
+    other->send(make_event("chat", {{"from", from ? from->nick() : ""}, {"text", text}}));
+}
+
+bool GameRoom::on_move(const std::shared_ptr<Session>& from, const std::string& from_sq, 
+                       const std::string& to_sq, const std::string& promotion) {
+    // Определяем, чей сейчас ход
+    uint8_t current_side = _position.side_to_move();
+    uint8_t player_side = (from == _a) ? PieceColor::White : PieceColor::Black;
+    
+    // Проверяем, что ходит нужный игрок
+    if (current_side != player_side) {
+        from->send(make_error("Not your turn"));
+        return false;
+    }
+    
+    // Преобразуем координаты
+    uint8_t from_idx = algebraic_to_index(from_sq);
+    uint8_t to_idx = algebraic_to_index(to_sq);
+    
+    if (from_idx == 255 || to_idx == 255) {
+        from->send(make_error("Invalid square format"));
+        return false;
+    }
+    
+    // Генерируем все легальные ходы
+    MoveList moves = _position.generate_moves();
+    
+    // Ищем наш ход
+    Move found_move;
+    bool move_found = false;
+    
+    for (uint8_t i = 0; i < moves.size(); ++i) {
+        const Move& m = moves[i];
+        if (m.from == from_idx && m.to == to_idx) {
+            // Проверка превращения пешки
+            if (m.flag >= Move::Flag::PromoteToKnight && m.flag <= Move::Flag::PromoteToQueen) {
+                if (promotion.empty()) {
+                    from->send(make_error("Promotion piece required (n/b/r/q)"));
+                    return false;
+                }
+                // Проверяем соответствие фигуры превращения
+                if ((promotion == "n" && m.flag != Move::Flag::PromoteToKnight) ||
+                    (promotion == "b" && m.flag != Move::Flag::PromoteToBishop) ||
+                    (promotion == "r" && m.flag != Move::Flag::PromoteToRook) ||
+                    (promotion == "q" && m.flag != Move::Flag::PromoteToQueen)) {
+                    continue;
+                }
+            }
+            found_move = m;
+            move_found = true;
+            break;
+        }
+    }
+    
+    if (!move_found) {
+        from->send(make_error("Illegal move"));
+        return false;
+    }
+    
+    // Применяем ход
+    if (!_position.apply_move(found_move)) {
+        from->send(make_error("Move failed"));
+        return false;
+    }
+    
+    // Отправляем обновление обоим игрокам
+    auto move_event = make_event("move", {
+        {"from", from_sq},
+        {"to", to_sq},
+        {"by", from->nick()},
+        {"fen", _position.get_fen()}
+    });
+    broadcast(move_event);
+    
+    // Проверяем окончание партии
+    if (_position.is_checkmate()) {
+        std::string winner = (_position.side_to_move() == PieceColor::White) ? 
+                             (_b ? _b->nick() : "") : (_a ? _a->nick() : "");
+        end_game("checkmate", winner.empty() ? nullptr : 
+                 (winner == (_a ? _a->nick() : "") ? _a : _b));
+        return true;
+    }
+    
+    if (_position.is_stalemate()) {
+        end_game("stalemate", nullptr);
+        return true;
+    }
+    
+    if (_position.is_threefold_repetition()) {
+        end_game("threefold_repetition", nullptr);
+        return true;
+    }
+    
+    if (_position.is_fifty_move_rule()) {
+        end_game("fifty_move_rule", nullptr);
+        return true;
+    }
+    
+    // Проверяем шах
+    if (MoveGen::is_check(_position.pieces(), _position.side_to_move())) {
+        broadcast(make_event("check", {{"side", _position.side_to_move() == PieceColor::White ? "white" : "black"}}));
+    }
+    
+    return true;
+}
+
+void GameRoom::end_game(const std::string& result, const std::shared_ptr<Session>& winner) {
+    nlohmann::json event_data;
+    event_data["result"] = result;
+    
+    if (winner) {
+        event_data["winner"] = winner->nick();
+        // Обновление рейтинга
+        auto loser = opponent_of(winner);
+        if (loser) {
+            update_rating(winner, loser);
+        }
+    }
+    
+    broadcast(make_event("game_over", event_data));
+    
+    // Очищаем комнату у игроков
+    if (_a) _a->_room.reset();
+    if (_b) _b->_room.reset();
+}
+
+void GameRoom::update_rating(const std::shared_ptr<Session>& winner, const std::shared_ptr<Session>& loser) {
+    // Формула Эло
+    const int K = 32;
+    double Ra = static_cast<double>(winner->_rating);
+    double Rb = static_cast<double>(loser->_rating);
+    double Ea = 1.0 / (1.0 + std::pow(10.0, (Rb - Ra) / 400.0));
+    double Eb = 1.0 - Ea;
+    
+    int new_winner_rating = static_cast<int>(std::lround(Ra + K * (1.0 - Ea)));
+    int new_loser_rating = static_cast<int>(std::lround(Rb + K * (0.0 - Eb)));
+    
+    winner->_rating = new_winner_rating;
+    loser->_rating = new_loser_rating;
+    
+    winner->send(make_event("rating_update", {{"rating", winner->_rating}}));
+    loser->send(make_event("rating_update", {{"rating", loser->_rating}}));
+    
+    BOOST_LOG_TRIVIAL(info) << "Rating updated: " << winner->nick() << " " << new_winner_rating
+                            << ", " << loser->nick() << " " << new_loser_rating;
+}
+
+void GameRoom::on_draw_request(const std::shared_ptr<Session>& from) {
+    if (!has(from)) return;
+    
+    if (from == _a) {
+        _draw_offer_a = true;
+    } else {
+        _draw_offer_b = true;
+    }
+    
+    auto other = opponent_of(from);
+    if (other) {
+        other->send(make_event("draw_offer", {{"from", from ? from->nick() : ""}}));
+    }
+}
+
+bool GameRoom::on_draw_accept(const std::shared_ptr<Session>& from) {
+    if (!has(from)) return false;
+    
+    bool accepted = (from == _a && _draw_offer_b) || (from == _b && _draw_offer_a);
+    
+    if (!accepted) return false;
+    
+    end_game("draw_agreed", nullptr);
+    return true;
+}
+
+bool GameRoom::on_draw_decline(const std::shared_ptr<Session>& from) {
+    if (!has(from)) return false;
+    
+    if (from == _a && _draw_offer_b) {
+        _draw_offer_b = false;
+        if (_b) _b->send(make_event("draw_declined", {{"by", from ? from->nick() : ""}}));
+        return true;
+    }
+    if (from == _b && _draw_offer_a) {
+        _draw_offer_a = false;
+        if (_a) _a->send(make_event("draw_declined", {{"by", from ? from->nick() : ""}}));
+        return true;
+    }
+    
+    return false;
+}
+
+void GameRoom::on_disconnect(const std::shared_ptr<Session>& who) {
+    auto other = opponent_of(who);
+    if (other) {
+        other->send(make_event("opponent_disconnected", {{"result", "win"}}));
+        // Победитель получает рейтинг
+        update_rating(other, who);
+        other->_room.reset();
+    }
+    if (_a) _a->_room.reset();
+    if (_b) _b->_room.reset();
+}
 
 bool GameRoom::has(const std::shared_ptr<Session>& s) const {
     return s && (s == _a || s == _b);
@@ -162,140 +396,43 @@ std::shared_ptr<Session> GameRoom::opponent_of(const std::shared_ptr<Session>& s
     return (s == _a) ? _b : _a;
 }
 
-void GameRoom::start() {
-    if (_a) _a->send(make_event("match_found", {{"opponent", _b ? _b->nick() : ""}}));
-    if (_b) _b->send(make_event("match_found", {{"opponent", _a ? _a->nick() : ""}}));
+std::string GameRoom::get_position_fen() const {
+    return _position.get_fen();
 }
 
-void GameRoom::on_chat(const std::shared_ptr<Session>& from, const std::string& text) {
-    BOOST_LOG_TRIVIAL(info) << "GameRoom::on_chat called, from: " << (from ? from->nick() : "null");
-    
-    auto other = opponent_of(from);
-    BOOST_LOG_TRIVIAL(info) << "Opponent: " << (other ? other->nick() : "null");
-    
-    if (!other) {
-        BOOST_LOG_TRIVIAL(error) << "No opponent found!";
-        return;
-    }
-    other->send(make_event("chat", {{"from", from ? from->nick() : ""}, {"text", text}}));
+// ==================== ChessServer ====================
+
+ChessServer::ChessServer(boost::asio::io_context& io, const ServerSettings& config)
+    : _acceptor(io, tcp::endpoint(boost::asio::ip::make_address(config.host), config.port)) {
+    BOOST_LOG_TRIVIAL(info) << "Server initialized on " << config.host << ":" << config.port;
+    start_accept();
 }
 
-void GameRoom::on_move(const std::shared_ptr<Session>& from, const std::string& from_sq, const std::string& to_sq) {
-    auto other = opponent_of(from);
-    if (!other) return;
-    other->send(make_event("move", {{"from", from_sq}, {"to", to_sq}, {"by", from ? from->nick() : ""}}));
-}
-
-void GameRoom::on_draw_request(const std::shared_ptr<Session>& from) {
-    if (!has(from)) return;
-    if (from == _a) {
-        _draw_offer_a = true;
-        _draw_offer_b = false;
-    }
-    if (from == _b) {
-        _draw_offer_b = true;
-        _draw_offer_a = false;
-    }
-
-    auto other = opponent_of(from);
-    if (other) {
-        other->send(make_event("draw_offer", {{"from", from ? from->nick() : ""}}));
-    }
-}
-
-bool GameRoom::on_draw_accept(const std::shared_ptr<Session>& from) {
-    if (!has(from)) return false;
-    const bool accepted =
-        (from == _a && _draw_offer_b) ||
-        (from == _b && _draw_offer_a);
-
-    if (!accepted) return false;
-
-    if (_a) {
-        _a->send(make_event("draw_agreed"));
-        _a->_room.reset();
-    }
-    if (_b) {
-        _b->send(make_event("draw_agreed"));
-        _b->_room.reset();
-    }
-    _draw_offer_a = false;
-    _draw_offer_b = false;
-    return true;
-}
-
-bool GameRoom::on_draw_decline(const std::shared_ptr<Session>& from) {
-    if (!has(from)) return false;
-    auto other = opponent_of(from);
-    bool had_offer = false;
-    if (from == _a && _draw_offer_b) {
-        _draw_offer_b = false;
-        had_offer = true;
-    }
-    if (from == _b && _draw_offer_a) {
-        _draw_offer_a = false;
-        had_offer = true;
-    }
-    if (had_offer && other) {
-        other->send(make_event("draw_declined", {{"by", from ? from->nick() : ""}}));
-    }
-    return had_offer;
-}
-
-void GameRoom::on_disconnect(const std::shared_ptr<Session>& who) {
-    auto other = opponent_of(who);
-    if (other) {
-        other->send(make_event("opponent_disconnected", {{"result", "win"}}));
-        other->_room.reset();
-    }
-    if (_a) _a->_room.reset();
-    if (_b) _b->_room.reset();
-}
-
-void ChessServer::start_accept(){
-
+void ChessServer::start_accept() {
     auto new_session = std::make_shared<Session>(
-        tcp::socket(static_cast<boost::asio::io_context&>(_acceptor.get_executor().context())),
+        tcp::socket(_acceptor.get_executor().context()),
         *this);
 
     _acceptor.async_accept(new_session->socket(),
-[this, new_session](boost::system::error_code ec){
-    if (!ec){
-        _sessions.push_back(new_session);
-        new_session->start(); // посмотреть на переполнение  stack ! 
-    }
-    else{
-        BOOST_LOG_TRIVIAL(error) << "Accept error: " << ec.message();
-    }
-
-    start_accept(); 
-});
+        [this, new_session](boost::system::error_code ec) {
+            if (!ec) {
+                _sessions.push_back(new_session);
+                new_session->start();
+            } else {
+                BOOST_LOG_TRIVIAL(error) << "Accept error: " << ec.message();
+            }
+            start_accept();
+        });
 }
 
 void ChessServer::on_disconnect(const std::shared_ptr<Session>& s) {
     if (!s) return;
 
-    // Remove from queue if needed
     remove_from_queue(s);
 
-    // If in a room - notify opponent
     if (auto room = s->_room.lock()) {
-        auto winner = room->opponent_of(s);
-        if (winner) {
-            // Elo update on disconnect = win for remaining player
-            const double Ra = static_cast<double>(winner->_rating);
-            const double Rb = static_cast<double>(s->_rating);
-            const double Ea = 1.0 / (1.0 + std::pow(10.0, (Rb - Ra) / 400.0));
-            const double Eb = 1.0 - Ea;
-            const int K = 32;
-            winner->_rating = static_cast<int>(std::lround(Ra + K * (1.0 - Ea)));
-            s->_rating = static_cast<int>(std::lround(Rb + K * (0.0 - Eb)));
-
-            winner->send(make_event("rating_update", {{"rating", winner->_rating}}));
-        }
         room->on_disconnect(s);
     }
-
 
     _sessions.erase(
         std::remove_if(_sessions.begin(), _sessions.end(),
@@ -303,6 +440,7 @@ void ChessServer::on_disconnect(const std::shared_ptr<Session>& s) {
         _sessions.end());
 
     s->close();
+    BOOST_LOG_TRIVIAL(info) << "Session disconnected: " << s->nick();
 }
 
 void ChessServer::handle_auth(const std::shared_ptr<Session>& s, const GameCommand& cmd) {
@@ -314,6 +452,7 @@ void ChessServer::handle_auth(const std::shared_ptr<Session>& s, const GameComma
     s->_authorized = true;
     s->_nick = cmd.nick;
     s->send(make_ok("authorized"));
+    BOOST_LOG_TRIVIAL(info) << "Player authorized: " << s->nick() << " rating: " << s->rating();
 }
 
 void ChessServer::handle_queue(const std::shared_ptr<Session>& s) {
@@ -327,7 +466,6 @@ void ChessServer::handle_queue(const std::shared_ptr<Session>& s) {
         return;
     }
 
-    // Avoid duplicates in queue
     for (auto& q : _queue) {
         if (q == s) {
             s->send(make_ok("already queued"));
@@ -349,6 +487,7 @@ void ChessServer::handle_leave(const std::shared_ptr<Session>& s) {
         s->_room.reset();
     }
     s->send(make_ok("left"));
+    BOOST_LOG_TRIVIAL(info) << "Player " << s->nick() << " left queue/game";
 }
 
 void ChessServer::handle_chat(const std::shared_ptr<Session>& s, const GameCommand& cmd) {
@@ -357,17 +496,11 @@ void ChessServer::handle_chat(const std::shared_ptr<Session>& s, const GameComma
         s->send(make_error("not authorized"));
         return;
     }
-    
-    BOOST_LOG_TRIVIAL(info) << "handle_chat for " << s->nick() << ", checking room...";
-    
     auto room = s->_room.lock();
     if (!room) {
-        BOOST_LOG_TRIVIAL(error) << "Room is null for " << s->nick();
         s->send(make_error("not in game"));
         return;
     }
-    
-    BOOST_LOG_TRIVIAL(info) << "Room exists, calling on_chat";
     room->on_chat(s, cmd.text);
     s->send(make_ok("sent"));
 }
@@ -383,8 +516,11 @@ void ChessServer::handle_move(const std::shared_ptr<Session>& s, const GameComma
         s->send(make_error("not in game"));
         return;
     }
-    room->on_move(s, cmd.from, cmd.to);
-    s->send(make_ok("moved"));
+    
+    std::string promotion = cmd.action; // для превращения пешки
+    if (room->on_move(s, cmd.from, cmd.to, promotion)) {
+        // Ход успешно выполнен
+    }
 }
 
 void ChessServer::handle_draw(const std::shared_ptr<Session>& s, const GameCommand& cmd) {
@@ -431,31 +567,17 @@ void ChessServer::remove_from_queue(const std::shared_ptr<Session>& s) {
 void ChessServer::try_matchmake() {
     BOOST_LOG_TRIVIAL(info) << "try_matchmake called, queue size: " << _queue.size();
     
-    if (_queue.size() < 2) {
-        BOOST_LOG_TRIVIAL(info) << "Not enough players in queue";
-        return;
-    }
-    
     while (_queue.size() >= 2) {
-        BOOST_LOG_TRIVIAL(info) << "Attempting to match players...";
-        
         auto a = _queue.front();
         _queue.pop_front();
-        if (!a) {
-            BOOST_LOG_TRIVIAL(warning) << "Null session in queue, skipping";
-            continue;
-        }
-        
-        BOOST_LOG_TRIVIAL(info) << "First player: " << a->nick() << " rating: " << a->rating();
+        if (!a) continue;
 
         int best_idx = -1;
         int best_diff = 0;
         for (int i = 0; i < static_cast<int>(_queue.size()); ++i) {
             auto& cand = _queue[i];
-            if (!cand) continue;
+            if (!cand || cand == a) continue;
             int diff = std::abs(cand->_rating - a->_rating);
-            BOOST_LOG_TRIVIAL(info) << "  Checking candidate " << i << ": " << cand->nick() 
-                                    << " rating: " << cand->rating() << " diff: " << diff;
             if (best_idx == -1 || diff < best_diff) {
                 best_idx = i;
                 best_diff = diff;
@@ -463,40 +585,25 @@ void ChessServer::try_matchmake() {
         }
 
         if (best_idx == -1) {
-            BOOST_LOG_TRIVIAL(info) << "No suitable opponent found for " << a->nick();
             _queue.push_front(a);
+            BOOST_LOG_TRIVIAL(info) << "No suitable opponent found for " << a->nick();
             return;
         }
 
         auto b = _queue[best_idx];
         _queue.erase(_queue.begin() + best_idx);
         if (!b) {
-            BOOST_LOG_TRIVIAL(warning) << "Null candidate session, skipping";
             _queue.push_front(a);
             return;
         }
 
-        BOOST_LOG_TRIVIAL(info) << "MATCH FOUND! " << a->nick() << " (rating: " << a->rating() 
-                                << ") vs " << b->nick() << " (rating: " << b->rating() << ")";
+        BOOST_LOG_TRIVIAL(info) << "Matched " << a->nick() << " (rating: " << a->rating() 
+                                << ") with " << b->nick() << " (rating: " << b->rating() << ")";
 
         auto room = std::make_shared<GameRoom>(a, b);
-        
-        // Проверяем, что room создан
-        if (!room) {
-            BOOST_LOG_TRIVIAL(error) << "Failed to create GameRoom!";
-            return;
-        }
-        
         a->_room = room;
         b->_room = room;
-        
-        BOOST_LOG_TRIVIAL(info) << "Room assigned to both players";
-        
         _rooms.push_back(room);
         room->start();
-        
-        BOOST_LOG_TRIVIAL(info) << "Room started, queue size now: " << _queue.size();
     }
 }
-
-
