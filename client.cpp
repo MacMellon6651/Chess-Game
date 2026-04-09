@@ -37,6 +37,53 @@ static void setup_windows_console_utf8() {
 }
 #endif
 
+// Функция для обновления доски из FEN строки
+void update_board_from_fen(std::array<std::array<std::string, 8>, 8>& board, const std::string& fen) {
+    // Парсим только часть с фигурами (до первого пробела)
+    std::string board_part = fen;
+    size_t space_pos = fen.find(' ');
+    if (space_pos != std::string::npos) {
+        board_part = fen.substr(0, space_pos);
+    }
+    
+    int y = 7;  // начинаем с 8-й строки (индекс 7)
+    int x = 0;
+    
+    for (char ch : board_part) {
+        if (ch == '/') {
+            // Переход на следующую строку
+            x = 0;
+            y--;
+        } else if (std::isdigit(ch)) {
+            // Пропуск пустых клеток
+            x += (ch - '0');
+        } else {
+            // Устанавливаем фигуру на доску
+            int row = y;
+            int col = x;
+            
+            switch (ch) {
+                // Белые фигуры
+                case 'P': board[row][col] = u8"♙"; break;
+                case 'N': board[row][col] = u8"♘"; break;
+                case 'B': board[row][col] = u8"♗"; break;
+                case 'R': board[row][col] = u8"♖"; break;
+                case 'Q': board[row][col] = u8"♕"; break;
+                case 'K': board[row][col] = u8"♔"; break;
+                // Чёрные фигуры
+                case 'p': board[row][col] = u8"♟"; break;
+                case 'n': board[row][col] = u8"♞"; break;
+                case 'b': board[row][col] = u8"♝"; break;
+                case 'r': board[row][col] = u8"♜"; break;
+                case 'q': board[row][col] = u8"♛"; break;
+                case 'k': board[row][col] = u8"♚"; break;
+                default: board[row][col] = "·"; break;
+            }
+            x++;
+        }
+    }
+}
+
 struct ClientUi {
     std::array<std::array<std::string, 8>, 8> board{};
     std::deque<std::string> feed;
@@ -62,6 +109,11 @@ struct ClientUi {
         }};
     }
 
+    // Обновление всей доски из FEN
+    void update_board_from_fen(const std::string& fen) {
+        ::update_board_from_fen(board, fen);
+    }
+
     bool sq_to_idx(const std::string& sq, int& r, int& c) const {
         if (sq.size() != 2) return false;
         char file = static_cast<char>(std::tolower(static_cast<unsigned char>(sq[0])));
@@ -80,11 +132,6 @@ struct ClientUi {
         }
         board[r2][c2] = board[r1][c1];
         board[r1][c1] = "·";
-    }
-
-    static std::string pad_right(const std::string& s, size_t width) {
-        if (s.size() >= width) return s.substr(0, width);
-        return s + std::string(width - s.size(), ' ');
     }
 
     void render() const {
@@ -140,11 +187,41 @@ static void process_incoming_line(ClientUi& ui, const std::string& line) {
                 const std::string from = data.value("from", std::string(""));
                 const std::string to = data.value("to", std::string(""));
                 const std::string by = data.value("by", std::string("?"));
-                ui.apply_move(from, to);
+                const std::string fen = data.value("fen", std::string(""));
+                
+                // Обновляем доску из FEN
+                if (!fen.empty()) {
+                    ui.update_board_from_fen(fen);
+                } else {
+                    // fallback: старый способ обновления
+                    ui.apply_move(from, to);
+                }
                 ui.push_feed("[move] " + by + ": " + from + " -> " + to);
             } else if (event == "match_found") {
                 ui.status = "in_game";
                 ui.push_feed("[match] opponent: " + data.value("opponent", std::string("?")));
+                
+                // Обновляем доску из FEN, если пришла
+                if (data.contains("board") && data["board"].contains("fen")) {
+                    std::string fen = data["board"]["fen"];
+                    ui.update_board_from_fen(fen);
+                }
+            } else if (event == "game_over") {
+                ui.status = "menu";
+                std::string result = data.value("result", std::string(""));
+                if (result == "checkmate") {
+                    ui.push_feed("[game] checkmate! " + data.value("winner", std::string("")) + " wins!");
+                } else if (result == "stalemate") {
+                    ui.push_feed("[game] stalemate! Game drawn.");
+                } else if (result == "draw_agreed") {
+                    ui.push_feed("[game] draw agreed!");
+                } else if (result == "threefold_repetition") {
+                    ui.push_feed("[game] threefold repetition! Game drawn.");
+                } else if (result == "fifty_move_rule") {
+                    ui.push_feed("[game] fifty move rule! Game drawn.");
+                } else {
+                    ui.push_feed("[game] game over: " + result);
+                }
             } else if (event == "opponent_disconnected") {
                 ui.status = "menu";
                 ui.push_feed("[game] opponent disconnected, you win");
@@ -157,6 +234,8 @@ static void process_incoming_line(ClientUi& ui, const std::string& line) {
                 ui.push_feed("[draw] declined by " + data.value("by", std::string("?")));
             } else if (event == "rating_update") {
                 ui.push_feed("[rating] now: " + std::to_string(data.value("rating", 0)));
+            } else if (event == "check") {
+                ui.push_feed("[check] " + data.value("side", std::string("")) + " king is in check!");
             } else {
                 ui.push_feed("[event] " + event);
             }
@@ -312,7 +391,7 @@ int main() {
                     dirty = true;
                     continue;
                 }
-                ui.apply_move(from, to);
+                // Не применяем ход локально, ждём подтверждения от сервера
                 if (!send_and_process_one(sock, ui, {{"type", "move"}, {"from", from}, {"to", to}})) break;
                 dirty = true;
                 continue;
@@ -348,4 +427,3 @@ int main() {
         return 1;
     }
 }
-
