@@ -1,0 +1,237 @@
+.app {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+}
+
+.game-container {
+  display: flex;
+  gap: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+  background: white;
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+}
+
+.board-container {
+  flex: 2;
+}
+
+.info-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.login-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.login-box {
+  background: white;
+  padding: 40px;
+  border-radius: 10px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  text-align: center;
+}
+
+.login-box h1 {
+  margin-bottom: 30px;
+  color: #333;
+}
+
+.login-box input {
+  width: 100%;
+  padding: 10px;
+  margin: 10px 0;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 16px;
+}
+
+.login-box button {
+  width: 100%;
+  padding: 10px;
+  margin-top: 20px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.login-box button:hover {
+  background: #5a67d8;
+}
+
+.waiting-board {
+  width: 560px;
+  height: 560px;
+  background: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+}
+
+.waiting-message {
+  text-align: center;
+  color: #666;
+}
+
+.chess-board {
+  position: relative;
+}
+
+.waiting-move {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.8);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 5px;
+  font-weight: bold;
+}
+
+.game-status {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 10px;
+}
+
+.player-info h3, .game-info h3 {
+  margin: 0 0 10px 0;
+  color: #333;
+}
+
+.player-info p, .game-info p {
+  margin: 5px 0;
+  color: #666;
+}
+
+.your-turn {
+  color: #28a745;
+  font-weight: bold;
+}
+
+.opponent-turn {
+  color: #dc3545;
+}
+
+.queue-actions {
+  margin-top: 15px;
+}
+
+.join-btn, .leave-btn {
+  width: 100%;
+  padding: 10px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.join-btn {
+  background: #28a745;
+  color: white;
+}
+
+.join-btn:hover {
+  background: #218838;
+}
+
+.leave-btn {
+  background: #dc3545;
+  color: white;
+}
+
+.leave-btn:hover {
+  background: #c82333;
+}
+
+.game-actions button {
+  width: 100%;
+  padding: 8px;
+  margin-top: 10px;
+  background: #ffc107;
+  color: #333;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.chat-container {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 10px;
+  height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-container h3 {
+  margin: 0 0 10px 0;
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+
+.message {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.sender {
+  font-weight: bold;
+  color: #667eea;
+  margin-right: 8px;
+}
+
+.text {
+  color: #333;
+}
+
+.time {
+  font-size: 11px;
+  color: #999;
+  margin-left: 8px;
+}
+
+.chat-container form {
+  display: flex;
+  gap: 10px;
+}
+
+.chat-container input {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+}
+
+.chat-container button {
+  padding: 8px 15px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.chat-container button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}

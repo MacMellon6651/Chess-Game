@@ -325,7 +325,11 @@ int main() {
             return 1;
         }
 
-        if (!send_and_process_one(sock, ui, {{"type", "auth"}, {"nick", ui.nick}})) {
+        std::cout << "Enter password (optional, press Enter to skip): ";
+        std::string password;
+        std::getline(std::cin, password);
+
+        if (!send_and_process_one(sock, ui, {{"type", "auth"}, {"nick", ui.nick}, {"password", password}})) {
             std::cerr << "auth failed\n";
             return 1;
         }

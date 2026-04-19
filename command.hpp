@@ -11,6 +11,7 @@ struct GameCommand{
     std::string from; // move: "e2"
     std::string to;   // move: "e4"
     std::string nick; // auth
+    std::string password;
     std::string text; // chat
     std::string action; // draw: "offer"|"accept"|"decline"
     int player_id {};

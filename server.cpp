@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include "chess_engine/move_gen.hpp"
+#include "database.hpp"
 
 // Вспомогательные функции для преобразования координат
 uint8_t algebraic_to_index(const std::string& sq) {
@@ -156,8 +157,8 @@ void Session::do_write() {
 
 //                  GameRoom
 
-GameRoom::GameRoom(std::shared_ptr<Session> a, std::shared_ptr<Session> b)
-    : _a(std::move(a)), _b(std::move(b)) {}
+GameRoom::GameRoom(std::shared_ptr<Session> a, std::shared_ptr<Session> b, ChessServer& server)
+    : _a(std::move(a)), _b(std::move(b)), _server(server) {}
 
 void GameRoom::broadcast(const nlohmann::json& msg) {
     if (_a) _a->send(msg);
@@ -295,13 +296,33 @@ void GameRoom::end_game(const std::string& result, const std::shared_ptr<Session
     nlohmann::json event_data;
     event_data["result"] = result;
     
+    BOOST_LOG_TRIVIAL(info) << "=== GAME ENDED ===";
+    BOOST_LOG_TRIVIAL(info) << "Result: " << result;
+    
     if (winner) {
         event_data["winner"] = winner->nick();
+        BOOST_LOG_TRIVIAL(info) << "Winner: " << winner->nick();
+        
         // Обновление рейтинга
         auto loser = opponent_of(winner);
         if (loser) {
             update_rating(winner, loser);
         }
+    }
+    
+    // ДОБАВЛЯЕМ СОХРАНЕНИЕ ИГРЫ В БД
+    if (auto db = _server.get_db()) {
+        int white_id = _a ? _a->_user_id : -1;
+        int black_id = _b ? _b->_user_id : -1;
+        int winner_id = winner ? winner->_user_id : -1;
+        
+        BOOST_LOG_TRIVIAL(info) << "Saving game: white_id=" << white_id 
+                                << " black_id=" << black_id 
+                                << " winner_id=" << winner_id;
+        
+        db->save_game(white_id, black_id, winner_id, result, _position.get_fen());
+    } else {
+        BOOST_LOG_TRIVIAL(error) << "Database not available, game not saved!";
     }
     
     broadcast(make_event("game_over", event_data));
@@ -324,6 +345,17 @@ void GameRoom::update_rating(const std::shared_ptr<Session>& winner, const std::
     
     winner->_rating = new_winner_rating;
     loser->_rating = new_loser_rating;
+    
+    // ДОБАВЛЯЕМ СОХРАНЕНИЕ РЕЙТИНГА В БД
+    if (auto db = _server.get_db()) {
+        db->update_rating(winner->_user_id, new_winner_rating);
+        db->update_rating(loser->_user_id, new_loser_rating);
+        db->update_stats(winner->_user_id, true, false);
+        db->update_stats(loser->_user_id, false, false);
+        BOOST_LOG_TRIVIAL(info) << "Ratings saved to database";
+    } else {
+        BOOST_LOG_TRIVIAL(error) << "Database not available, ratings not saved!";
+    }
     
     winner->send(make_event("rating_update", {{"rating", winner->_rating}}));
     loser->send(make_event("rating_update", {{"rating", loser->_rating}}));
@@ -403,7 +435,8 @@ std::string GameRoom::get_position_fen() const {
 //  ChessServer 
 
 ChessServer::ChessServer(boost::asio::io_context& io, const ServerSettings& config)
-    : _acceptor(io, tcp::endpoint(boost::asio::ip::make_address(config.host), config.port)) {
+    : _acceptor(io, tcp::endpoint(boost::asio::ip::make_address(config.host), config.port)),
+     db_(std::make_shared<Database>("chess.db")) {
     BOOST_LOG_TRIVIAL(info) << "Server initialized on " << config.host << ":" << config.port;
     start_accept();
 }
@@ -449,10 +482,34 @@ void ChessServer::handle_auth(const std::shared_ptr<Session>& s, const GameComma
         s->send(make_error("nick required"));
         return;
     }
-    s->_authorized = true;
-    s->_nick = cmd.nick;
-    s->send(make_ok("authorized"));
-    BOOST_LOG_TRIVIAL(info) << "Player authorized: " << s->nick() << " rating: " << s->rating();
+    
+    BOOST_LOG_TRIVIAL(info) << "Auth attempt for nick: " << cmd.nick;
+    
+    // ДОБАВЛЯЕМ РАБОТУ С БАЗОЙ ДАННЫХ
+    if (db_) {
+        // Пытаемся войти или зарегистрироваться
+        auto user_info = db_->login_or_register(cmd.nick, cmd.password);
+        
+        if (user_info.has_value()) {
+            s->_authorized = true;
+            s->_nick = user_info->nickname;
+            s->_rating = user_info->rating;
+            s->_user_id = user_info->id;
+            s->send(make_ok("authorized"));
+            s->send(make_event("rating_update", {{"rating", s->_rating}}));
+            BOOST_LOG_TRIVIAL(info) << "Player authorized: " << s->nick() 
+                                    << " (id: " << s->_user_id << ") rating: " << s->rating();
+        } else {
+            s->send(make_error("Authentication failed"));
+            BOOST_LOG_TRIVIAL(error) << "Authentication failed for: " << cmd.nick;
+        }
+    } else {
+        // Если БД не работает - старый способ (debug)
+        BOOST_LOG_TRIVIAL(warning) << "Database not available, using fallback auth";
+        s->_authorized = true;
+        s->_nick = cmd.nick;
+        s->send(make_ok("authorized"));
+    }
 }
 
 void ChessServer::handle_queue(const std::shared_ptr<Session>& s) {
@@ -600,10 +657,149 @@ void ChessServer::try_matchmake() {
         BOOST_LOG_TRIVIAL(info) << "Matched " << a->nick() << " (rating: " << a->rating() 
                                 << ") with " << b->nick() << " (rating: " << b->rating() << ")";
 
-        auto room = std::make_shared<GameRoom>(a, b);
+        auto room = std::make_shared<GameRoom>(a, b, *this);
         a->_room = room;
         b->_room = room;
         _rooms.push_back(room);
         room->start();
     }
+}
+
+// server.cpp - добавить в конец файла
+
+// ============================================================================
+// WebSocket обработчики
+// ============================================================================
+
+void ChessServer::handle_websocket_auth(const std::shared_ptr<WebSocketSession>& ws, const GameCommand& cmd) {
+    if (cmd.nick.empty()) {
+        ws->send({{"status", "error"}, {"message", "nick required"}});
+        return;
+    }
+    
+    BOOST_LOG_TRIVIAL(info) << "Auth attempt for: " << cmd.nick;
+    
+    // Пытаемся войти
+    auto user_info = db_->login_user(cmd.nick, cmd.password);
+    
+    // Если пользователь не найден - регистрируем
+    if (!user_info.has_value()) {
+        BOOST_LOG_TRIVIAL(info) << "User not found, registering: " << cmd.nick;
+        if (db_->register_user(cmd.nick, cmd.password)) {
+            // После регистрации пробуем войти снова
+            user_info = db_->login_user(cmd.nick, cmd.password);
+        }
+    }
+    
+    if (user_info.has_value()) {
+        ws->_authorized = true;
+        ws->_nick = user_info->nickname;
+        ws->_rating = user_info->rating;
+        ws->_user_id = user_info->id;
+        
+        ws->send({{"status", "ok"}, {"message", "authorized"}});
+        ws->send(make_event("rating_update", {{"rating", ws->_rating}}));
+        
+        BOOST_LOG_TRIVIAL(info) << "WebSocket player authorized: " << ws->_nick 
+                                << " (id: " << ws->_user_id << ") rating: " << ws->_rating;
+    } else {
+        ws->send({{"status", "error"}, {"message", "Authentication failed"}});
+        BOOST_LOG_TRIVIAL(error) << "Authentication failed for: " << cmd.nick;
+    }
+}
+
+void ChessServer::handle_websocket_queue(const std::shared_ptr<WebSocketSession>& ws) {
+    if (!ws->is_authorized()) {
+        ws->send({{"status", "error"}, {"message", "not authorized"}});
+        return;
+    }
+    
+    // Создаём или получаем TCP сессию для этого WebSocket
+    auto session = get_or_create_session(ws);
+    handle_queue(session);
+}
+
+void ChessServer::handle_websocket_leave(const std::shared_ptr<WebSocketSession>& ws) {
+    if (!ws->is_authorized()) return;
+    
+    auto session = get_or_create_session(ws);
+    if (session) {
+        handle_leave(session);
+    }
+}
+
+void ChessServer::handle_websocket_chat(const std::shared_ptr<WebSocketSession>& ws, const GameCommand& cmd) {
+    if (!ws->is_authorized()) return;
+    
+    auto session = get_or_create_session(ws);
+    if (session) {
+        handle_chat(session, cmd);
+    }
+}
+
+void ChessServer::handle_websocket_move(const std::shared_ptr<WebSocketSession>& ws, const GameCommand& cmd) {
+    if (!ws->is_authorized()) return;
+    
+    auto session = get_or_create_session(ws);
+    if (session) {
+        handle_move(session, cmd);
+    }
+}
+
+void ChessServer::handle_websocket_draw(const std::shared_ptr<WebSocketSession>& ws, const GameCommand& cmd) {
+    if (!ws->is_authorized()) return;
+    
+    auto session = get_or_create_session(ws);
+    handle_draw(session, cmd);
+}
+
+void ChessServer::on_websocket_disconnect(const std::shared_ptr<WebSocketSession>& ws) {
+    if (ws && ws->is_authorized()) {
+        auto session = get_or_create_session(ws);
+        on_disconnect(session);
+        
+        // Удаляем из списка сессий
+        _web_sessions.erase(
+            std::remove_if(_web_sessions.begin(), _web_sessions.end(),
+                [&](const std::shared_ptr<WebSocketSession>& x) { return x == ws; }),
+            _web_sessions.end());
+        
+        // Удаляем из маппинга
+        _nick_to_session.erase(ws->_nick);
+    }
+}
+
+std::shared_ptr<Session> ChessServer::get_or_create_session(const std::shared_ptr<WebSocketSession>& ws) {
+    // Проверяем, есть ли уже TCP сессия для этого пользователя
+    auto it = _nick_to_session.find(ws->_nick);
+    if (it != _nick_to_session.end()) {
+        BOOST_LOG_TRIVIAL(info) << "Found existing session for: " << ws->_nick;
+        return it->second;
+    }
+    
+    BOOST_LOG_TRIVIAL(info) << "Creating new session for: " << ws->_nick;
+    
+    // Исправленный способ создания сокета
+    // Получаем io_context из acceptor
+    boost::asio::io_context& io_context = static_cast<boost::asio::io_context&>(_acceptor.get_executor().context());
+    
+    // Создаём сокет напрямую с io_context
+    auto socket = std::make_unique<tcp::socket>(io_context);
+    
+    // Создаём сессию с перемещённым сокетом
+    auto session = std::make_shared<Session>(std::move(*socket), *this);
+    
+    session->_authorized = true;
+    session->_nick = ws->_nick;
+    session->_rating = ws->_rating;
+    session->_user_id = ws->_user_id;
+    
+    // Сохраняем в маппинг
+    _nick_to_session[ws->_nick] = session;
+    _sessions.push_back(session);
+    
+    // ВАЖНО: запускаем сессию
+    session->start();
+    
+    return session;
 }

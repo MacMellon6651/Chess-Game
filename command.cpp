@@ -15,6 +15,7 @@ GameCommand Protocol::parse(const std::string& raw_d){
         cmd.from = jn.value("from","");
         cmd.to = jn.value("to","");
         cmd.nick = jn.value("nick","");
+        cmd.password = jn.value("password", "");
         cmd.text = jn.value("text","");
         cmd.action = jn.value("action", "");
 

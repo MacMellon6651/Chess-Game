@@ -8,6 +8,8 @@
 #include "command.hpp"
 #include "logging.hpp"
 #include "chess_engine/position.hpp"
+#include "websocket_server.hpp"
+#include "database.hpp"
 
 using boost::asio::ip::tcp;
 
@@ -45,6 +47,7 @@ private:
     bool _authorized{false};
     std::string _nick;
     int _rating{1000};
+    int _user_id{-1};
     std::weak_ptr<GameRoom> _room;
 
     friend class ChessServer;
@@ -52,9 +55,11 @@ private:
 };
 
 // Класс игровой комнаты с использованием шахматного движка
+// server.hpp - найдите класс GameRoom и замените весь класс
 class GameRoom : public std::enable_shared_from_this<GameRoom> {
 public:
-    GameRoom(std::shared_ptr<Session> a, std::shared_ptr<Session> b);
+    // Один конструктор с server
+    GameRoom(std::shared_ptr<Session> a, std::shared_ptr<Session> b, ChessServer& server);
 
     void start();
     void on_chat(const std::shared_ptr<Session>& from, const std::string& text);
@@ -67,8 +72,6 @@ public:
 
     bool has(const std::shared_ptr<Session>& s) const;
     std::shared_ptr<Session> opponent_of(const std::shared_ptr<Session>& s) const;
-    
-    // Получение текущей позиции в FEN для отладки
     std::string get_position_fen() const;
 
 private:
@@ -80,14 +83,24 @@ private:
     std::shared_ptr<Session> _b;
     bool _draw_offer_a{false};
     bool _draw_offer_b{false};
-    
-    // Шахматный движок
     Position _position;
+    ChessServer& _server;  // Ссылка на сервер
 };
 
 class ChessServer {
 public:
     ChessServer(boost::asio::io_context& io, const ServerSettings& config);
+
+    void handle_websocket_auth(const std::shared_ptr<WebSocketSession>& ws, const GameCommand& cmd);
+    void handle_websocket_queue(const std::shared_ptr<WebSocketSession>& ws);
+    void handle_websocket_leave(const std::shared_ptr<WebSocketSession>& ws);
+    void handle_websocket_chat(const std::shared_ptr<WebSocketSession>& ws, const GameCommand& cmd);
+    void handle_websocket_move(const std::shared_ptr<WebSocketSession>& ws, const GameCommand& cmd);
+    void handle_websocket_draw(const std::shared_ptr<WebSocketSession>& ws, const GameCommand& cmd);
+    void on_websocket_disconnect(const std::shared_ptr<WebSocketSession>& ws);
+
+    std::shared_ptr<Session> get_or_create_session(const std::shared_ptr<WebSocketSession>& ws);
+    std::shared_ptr<Database> get_db() { return db_; }
 
 private:
     void start_accept();
@@ -103,10 +116,17 @@ private:
     void try_matchmake();
     void remove_from_queue(const std::shared_ptr<Session>& s);
 
+
+
+    
+
     tcp::acceptor _acceptor;
     std::vector<std::shared_ptr<Session>> _sessions;
     std::vector<std::shared_ptr<GameRoom>> _rooms;
     std::deque<std::shared_ptr<Session>> _queue;
+    std::vector<std::shared_ptr<WebSocketSession>> _web_sessions;
+    std::unordered_map<std::string, std::shared_ptr<Session>> _nick_to_session;
+    std::shared_ptr<Database> db_;
 
     friend class Session;
 };
