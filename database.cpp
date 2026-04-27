@@ -325,3 +325,20 @@ void Database::update_last_login(int user_id) {
     std::string sql = "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = " + std::to_string(user_id);
     execute_query(sql);
 }
+
+std::vector<nlohmann::json> Database::get_top_players(int limit) {
+    std::vector<nlohmann::json> result;
+    std::string sql = "SELECT id, nickname, rating FROM users ORDER BY rating DESC LIMIT " + std::to_string(limit);
+    sqlite3_stmt* stmt;
+    if (sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
+        return result;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        nlohmann::json p;
+        p["id"] = sqlite3_column_int(stmt, 0);
+        p["nickname"] = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        p["rating"] = sqlite3_column_int(stmt, 2);
+        result.push_back(p);
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}

@@ -1,0 +1,119 @@
+{
+  "version": "1.0",
+  "description": "Chess Game Protocol",
+  "transport": ["tcp", "websocket"],
+  
+  "message_types": {
+    "request": {
+      "auth": {
+        "type": "auth",
+        "nick": "string",
+        "password": "string (optional)"
+      },
+      "queue": {
+        "type": "queue"
+      },
+      "leave": {
+        "type": "leave"
+      },
+      "chat": {
+        "type": "chat",
+        "text": "string"
+      },
+      "move": {
+        "type": "move",
+        "from": "string (e.g., 'e2')",
+        "to": "string (e.g., 'e4')",
+        "promotion": "string (optional: 'n','b','r','q')"
+      },
+      "draw": {
+        "type": "draw",
+        "action": "offer|accept|decline"
+      },
+      "ping": {
+        "type": "ping"
+      }
+    },
+    
+    "response": {
+      "status_response": {
+        "status": "ok|error",
+        "message": "string",
+        "data": "object (optional)"
+      },
+      "event": {
+        "type": "event",
+        "event": "string",
+        "data": "object"
+      }
+    },
+    
+    "events": {
+      "match_found": {
+        "event": "match_found",
+        "data": {
+          "opponent": "string",
+          "board": {
+            "fen": "string",
+            "you_are": "white|black"
+          }
+        }
+      },
+      "move": {
+        "event": "move",
+        "data": {
+          "from": "string",
+          "to": "string",
+          "by": "string",
+          "fen": "string"
+        }
+      },
+      "game_over": {
+        "event": "game_over",
+        "data": {
+          "result": "checkmate|stalemate|draw_agreed|threefold_repetition|fifty_move_rule",
+          "winner": "string (optional)"
+        }
+      },
+      "chat": {
+        "event": "chat",
+        "data": {
+          "from": "string",
+          "text": "string"
+        }
+      },
+      "draw_offer": {
+        "event": "draw_offer",
+        "data": {
+          "from": "string"
+        }
+      },
+      "draw_agreed": {
+        "event": "draw_agreed",
+        "data": {}
+      },
+      "draw_declined": {
+        "event": "draw_declined",
+        "data": {
+          "by": "string"
+        }
+      },
+      "rating_update": {
+        "event": "rating_update",
+        "data": {
+          "rating": "number"
+        }
+      },
+      "check": {
+        "event": "check",
+        "data": {
+          "side": "white|black"
+        }
+      },
+      "opponent_disconnected": {
+        "event": "opponent_disconnected",
+        "data": {}
+      }
+    }
+  }
+}

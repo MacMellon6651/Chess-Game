@@ -7,6 +7,7 @@
 #include <vector>
 #include <mutex>
 #include "logging.hpp"
+#include "json.hpp"
 
 struct UserInfo {
     int id = -1;
@@ -27,7 +28,7 @@ class Database {
 public:
     Database(const std::string& db_path = "chess.db");
     ~Database();
-    
+    std::vector<nlohmann::json> get_top_players(int limit = 10);
     bool register_user(const std::string& nickname, const std::string& password);
     std::optional<UserInfo> login_user(const std::string& nickname, const std::string& password);
 

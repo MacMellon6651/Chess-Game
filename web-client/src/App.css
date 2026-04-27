@@ -1,0 +1,778 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    min-height: 100vh;
+}
+
+.app {
+    padding: 20px;
+    min-height: 100vh;
+}
+
+/* ========== ЛОГИН ========== */
+.login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.login-box {
+    background: rgba(15, 52, 96, 0.95);
+    backdrop-filter: blur(10px);
+    padding: 40px;
+    border-radius: 20px;
+    text-align: center;
+    min-width: 350px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(233, 69, 96, 0.3);
+}
+
+.login-box h1 {
+    color: #e94560;
+    margin-bottom: 30px;
+    font-size: 32px;
+    letter-spacing: 2px;
+}
+
+.login-box input {
+    width: 100%;
+    padding: 12px;
+    margin: 10px 0;
+    border: none;
+    border-radius: 10px;
+    background: #1a1a2e;
+    color: white;
+    font-size: 16px;
+    transition: all 0.3s;
+}
+
+.login-box input:focus {
+    outline: none;
+    box-shadow: 0 0 10px rgba(233, 69, 96, 0.5);
+}
+
+.login-box button {
+    width: 100%;
+    padding: 12px;
+    margin-top: 20px;
+    background: linear-gradient(135deg, #e94560, #c73d56);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 18px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: transform 0.2s;
+}
+
+.login-box button:hover {
+    transform: scale(1.02);
+}
+
+/* ========== ОСНОВНОЙ КОНТЕЙНЕР ========== */
+.game-container {
+    display: flex;
+    gap: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* ========== ПАНЕЛЬ ДОСКИ ========== */
+.board-container {
+    background: #2c3e2f;
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+/* Шахматная доска */
+.chess-board-custom {
+    display: flex;
+    flex-direction: column;
+    width: 560px;
+    border: 2px solid #e94560;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.board-row {
+    display: flex;
+    height: 70px;
+}
+
+.board-square {
+    width: 70px;
+    height: 70px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.1s;
+    position: relative;
+}
+
+.board-square.white {
+    background-color: #f0d9b5;
+}
+
+.board-square.black {
+    background-color: #b58863;
+}
+
+.board-square.selected {
+    background: radial-gradient(circle, rgba(255, 255, 0, 0.6) 0%, rgba(255, 255, 0, 0.3) 100%) !important;
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 0, 0.8);
+}
+
+/* Подсветка возможных ходов */
+.board-square.possible-move::after {
+    content: '';
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    background: rgba(46, 204, 113, 0.7);
+    border-radius: 50%;
+    animation: pulse-green 0.3s ease-out;
+}
+
+.board-square.capture-move::after {
+    background: rgba(231, 76, 60, 0.7);
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    animation: pulse-red 0.3s ease-out;
+}
+
+@keyframes pulse-green {
+    0% {
+        transform: scale(0.5);
+        opacity: 0;
+    }
+    100% {
+        transform: scale(1.2);
+        opacity: 1;
+    }
+}
+
+@keyframes pulse-red {
+    0% {
+        transform: scale(0.5);
+        opacity: 0;
+    }
+    100% {
+        transform: scale(1.2);
+        opacity: 1;
+    }
+}
+
+.piece {
+    font-size: 42px;
+    font-weight: normal;
+    text-shadow: 2px 2px 3px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.1s;
+    z-index: 1;
+}
+
+.piece:hover {
+    transform: scale(1.05);
+}
+
+/* ========== ОЖИДАНИЕ ИГРЫ ========== */
+.waiting-board {
+    width: 560px;
+    height: 560px;
+    background: linear-gradient(135deg, #2c3e2f, #1a2a1c);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 15px;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Анимация поиска */
+.searching-animation {
+    position: relative;
+    width: 200px;
+    height: 200px;
+    margin-bottom: 30px;
+}
+
+.searching-animation.active .pulse-ring {
+    animation: pulse-ring 2s ease-out infinite;
+}
+
+.pulse-ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    border: 3px solid #e94560;
+    opacity: 0;
+}
+
+.pulse-ring.delay-1 {
+    animation-delay: 0.5s;
+}
+
+.pulse-ring.delay-2 {
+    animation-delay: 1s;
+}
+
+@keyframes pulse-ring {
+    0% {
+        width: 50px;
+        height: 50px;
+        opacity: 1;
+    }
+    100% {
+        width: 200px;
+        height: 200px;
+        opacity: 0;
+    }
+}
+
+.chess-pieces {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    gap: 10px;
+    animation: rotate 4s linear infinite;
+}
+
+@keyframes rotate {
+    0% {
+        transform: translate(-50%, -50%) rotate(0deg);
+    }
+    100% {
+        transform: translate(-50%, -50%) rotate(360deg);
+    }
+}
+
+.piece-anim {
+    font-size: 28px;
+    animation: bounce 1s ease-in-out infinite;
+    display: inline-block;
+}
+
+.piece-anim:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.piece-anim:nth-child(2) {
+    animation-delay: 0.1s;
+}
+
+.piece-anim:nth-child(3) {
+    animation-delay: 0.2s;
+}
+
+.piece-anim:nth-child(4) {
+    animation-delay: 0.3s;
+}
+
+.piece-anim:nth-child(5) {
+    animation-delay: 0.4s;
+}
+
+@keyframes bounce {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-15px);
+    }
+}
+
+.waiting-message {
+    text-align: center;
+    z-index: 1;
+}
+
+.waiting-message h2 {
+    color: #e94560;
+    font-size: 24px;
+    margin-bottom: 10px;
+    letter-spacing: 2px;
+}
+
+.queue-size {
+    color: #f1c40f;
+    font-size: 18px;
+    margin-bottom: 20px;
+    font-weight: bold;
+}
+
+.waiting-message button {
+    display: block;
+    width: 200px;
+    margin: 10px auto;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-join {
+    background: linear-gradient(135deg, #2ecc71, #27ae60);
+    color: white;
+}
+
+.btn-join:hover {
+    transform: scale(1.05);
+    box-shadow: 0 5px 20px rgba(46, 204, 113, 0.4);
+}
+
+.btn-leave {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: white;
+}
+
+.btn-leave:hover {
+    transform: scale(1.05);
+    box-shadow: 0 5px 20px rgba(231, 76, 60, 0.4);
+}
+
+/* ========== ИГРОВОЙ ХЕДЕР ========== */
+.game-header {
+    margin-bottom: 15px;
+}
+
+.vs-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #1a1a2e;
+    padding: 10px 20px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+}
+
+.you {
+    font-weight: bold;
+    font-size: 18px;
+    color: #2ecc71;
+}
+
+.opp {
+    font-weight: bold;
+    font-size: 18px;
+    color: #e74c3c;
+}
+
+.vs {
+    color: #e94560;
+    font-weight: bold;
+    font-size: 20px;
+}
+
+/* ========== ИНДИКАТОР ХОДА ========== */
+.turn-indicator {
+    margin-top: 15px;
+    padding: 12px;
+    text-align: center;
+    border-radius: 10px;
+    font-weight: bold;
+    font-size: 18px;
+    transition: all 0.3s;
+}
+
+.turn-indicator.your-turn {
+    background: linear-gradient(135deg, #2ecc71, #27ae60);
+    color: white;
+    animation: pulse-glow 1.5s infinite;
+}
+
+.turn-indicator.waiting-turn {
+    background: #1a1a2e;
+    color: #f1c40f;
+}
+
+@keyframes pulse-glow {
+    0%, 100% {
+        box-shadow: 0 0 5px rgba(46, 204, 113, 0.5);
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(46, 204, 113, 0.8);
+    }
+}
+
+/* ========== КНОПКИ ИГРЫ ========== */
+.game-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.game-buttons button {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.game-buttons button:hover {
+    transform: translateY(-2px);
+}
+
+.btn-draw {
+    background: #f39c12;
+    color: #1a1a2e;
+}
+
+.btn-accept {
+    background: #2ecc71;
+    color: white;
+}
+
+.btn-decline {
+    background: #e74c3c;
+    color: white;
+}
+
+.btn-resign {
+    background: #95a5a6;
+    color: white;
+}
+
+/* ========== ПРАВАЯ ПАНЕЛЬ ========== */
+.info-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* Карточка игрока */
+.player-card {
+    background: linear-gradient(135deg, #0f3460, #1a1a2e);
+    padding: 20px;
+    border-radius: 15px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.player-avatar {
+    font-size: 48px;
+    background: #e94560;
+    width: 70px;
+    height: 70px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+.player-details {
+    flex: 1;
+}
+
+.player-name {
+    font-size: 24px;
+    font-weight: bold;
+    color: #ecf0f1;
+}
+
+.player-rating {
+    font-size: 18px;
+    color: #f1c40f;
+    margin-top: 5px;
+}
+
+/* Лидерборд */
+.leaderboard {
+    background: linear-gradient(135deg, #0f3460, #1a1a2e);
+    border-radius: 15px;
+    overflow: hidden;
+}
+
+.leaderboard-header {
+    background: #e94560;
+    padding: 12px;
+    text-align: center;
+    font-weight: bold;
+    font-size: 18px;
+    color: white;
+}
+
+.leaderboard-list {
+    max-height: 250px;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.leaderboard-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 12px;
+    margin: 5px 0;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.leaderboard-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateX(5px);
+}
+
+.rank {
+    color: #f1c40f;
+    font-weight: bold;
+    width: 40px;
+}
+
+.name {
+    flex: 1;
+    color: #ecf0f1;
+}
+
+.rating {
+    color: #2ecc71;
+    font-weight: bold;
+}
+
+.loading-leaderboard {
+    text-align: center;
+    padding: 20px;
+    color: #ecf0f1;
+}
+
+/* Чат */
+.chat-container {
+    background: linear-gradient(135deg, #0f3460, #1a1a2e);
+    border-radius: 15px;
+    display: flex;
+    flex-direction: column;
+    height: 350px;
+    overflow: hidden;
+}
+
+.chat-header {
+    background: #e94560;
+    padding: 10px;
+    text-align: center;
+    font-weight: bold;
+    color: white;
+}
+
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.chat-message {
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    font-size: 13px;
+    animation: fadeIn 0.3s ease-out;
+    word-wrap: break-word;
+}
+
+.chat-message.error {
+    background: rgba(231, 76, 60, 0.2);
+    border-left: 3px solid #e74c3c;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.chat-sender {
+    font-weight: bold;
+    color: #f1c40f;
+    margin-right: 8px;
+}
+
+.chat-text {
+    color: #ecf0f1;
+}
+
+.chat-form {
+    display: flex;
+    padding: 10px;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.chat-form input {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 8px;
+    background: #1a1a2e;
+    color: white;
+    font-size: 14px;
+}
+
+.chat-form input:focus {
+    outline: none;
+    box-shadow: 0 0 5px rgba(233, 69, 96, 0.5);
+}
+
+.chat-form input::placeholder {
+    color: #888;
+}
+
+.chat-form button {
+    padding: 8px 15px;
+    background: #e94560;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.2s;
+}
+
+.chat-form button:hover {
+    background: #c73d56;
+}
+
+.chat-form button:disabled {
+    background: #555;
+    cursor: not-allowed;
+}
+
+/* ========== СКРОЛЛБАР ========== */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1a1a2e;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #e94560;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #c73d56;
+}
+
+/* ========== АДАПТИВНОСТЬ ========== */
+@media (max-width: 1000px) {
+    .game-container {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .info-container {
+        width: 100%;
+        max-width: 560px;
+    }
+    
+    .chess-board-custom {
+        width: 100%;
+        max-width: 560px;
+    }
+    
+    .board-row {
+        height: calc(12.5vw);
+    }
+    
+    .board-square {
+        width: calc(12.5vw);
+        height: calc(12.5vw);
+    }
+    
+    .piece {
+        font-size: calc(8vw);
+    }
+    
+    .waiting-board {
+        width: 100%;
+        max-width: 560px;
+        height: auto;
+        min-height: 560px;
+    }
+}
+
+@media (max-width: 600px) {
+    .app {
+        padding: 10px;
+    }
+    
+    .board-container {
+        padding: 10px;
+    }
+    
+    .login-box {
+        min-width: 280px;
+        padding: 20px;
+    }
+    
+    .login-box h1 {
+        font-size: 24px;
+    }
+    
+    .vs-info {
+        flex-direction: column;
+        gap: 5px;
+    }
+    
+    .game-buttons {
+        flex-wrap: wrap;
+    }
+    
+    .game-buttons button {
+        min-width: calc(50% - 5px);
+    }
+}
+/* Убедитесь, что эти стили есть в вашем CSS */
+.board-square.capture-move {
+    position: relative;
+    cursor: pointer;
+}
+
+.board-square.capture-move::after {
+    content: '';
+    position: absolute;
+    width: 30px !important;
+    height: 30px !important;
+    background: rgba(231, 76, 60, 0.8) !important; 
+    border-radius: 50%;
+    animation: pulse-red 0.3s ease-out;
+    box-shadow: 0 0 8px rgba(231, 76, 60, 0.5);
+}
+
+/* Дополнительно: красная обводка для клеток со взятием */
+.board-square.capture-move {
+    box-shadow: inset 0 0 0 2px rgba(231, 76, 60, 0.8);
+}

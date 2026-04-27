@@ -14,7 +14,7 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 
-REM Компилируем сервер
+REM Компилируем сервер (новые файлы)
 g++ -std=c++17 ^
     main.cpp ^
     server.cpp ^
@@ -22,7 +22,9 @@ g++ -std=c++17 ^
     config.cpp ^
     logging.cpp ^
     database.cpp ^
-    websocket_server.cpp ^
+    tcp_session.cpp ^
+    websocket_session.cpp ^
+    game_room.cpp ^
     chess_engine/pieces.cpp ^
     chess_engine/zobrist.cpp ^
     chess_engine/move_gen.cpp ^

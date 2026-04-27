@@ -1,40 +1,71 @@
 #include "command.hpp"
 #include <iostream>
 
-GameCommand Protocol::parse(const std::string& raw_d){
+GameCommand GameCommand::from_protocol_message(const Protocol::Message& msg) {
     GameCommand cmd;
-    try{
-
-        auto jn = nlohmann::json::parse(raw_d);
-
-        if (jn.contains("type")){
-            cmd.type = jn.at("type").get<std::string>();
-            cmd.is_valid = true;
-        }
-
-        cmd.from = jn.value("from","");
-        cmd.to = jn.value("to","");
-        cmd.nick = jn.value("nick","");
-        cmd.password = jn.value("password", "");
-        cmd.text = jn.value("text","");
-        cmd.action = jn.value("action", "");
-
-        cmd.player_id = jn.value("player_id", 0);
-
+    
+    if (const auto* auth = dynamic_cast<const Protocol::AuthRequest*>(&msg)) {
+        cmd.type = "auth";
+        cmd.nick = auth->nick;
+        cmd.password = auth->password;
+        cmd.is_valid = true;
     }
-    catch (const nlohmann::json::exception& err){
-        cmd.is_valid = false;
+    else if (const auto* move = dynamic_cast<const Protocol::MoveRequest*>(&msg)) {
+        cmd.type = "move";
+        cmd.from = move->from;
+        cmd.to = move->to;
+        cmd.promotion = move->promotion;
+        cmd.is_valid = true;
     }
+    else if (const auto* chat = dynamic_cast<const Protocol::ChatRequest*>(&msg)) {
+        cmd.type = "chat";
+        cmd.text = chat->text;
+        cmd.is_valid = true;
+    }
+    else if (const auto* draw = dynamic_cast<const Protocol::DrawRequest*>(&msg)) {
+        cmd.type = "draw";
+        cmd.action = draw->action;
+        cmd.is_valid = true;
+    }
+    else if (dynamic_cast<const Protocol::QueueRequest*>(&msg)) {
+        cmd.type = "queue";
+        cmd.is_valid = true;
+    }
+    else if (dynamic_cast<const Protocol::LeaveRequest*>(&msg)) {
+        cmd.type = "leave";
+        cmd.is_valid = true;
+    }
+    else if (dynamic_cast<const Protocol::PingRequest*>(&msg)) {
+        cmd.type = "ping";
+        cmd.is_valid = true;
+    }
+    
     return cmd;
 }
 
-std::string Protocol::serialize(const std::string& status, const std::string& msg){
+GameCommand ProtocolParser::parse(const std::string& raw_data) {
+    try {
+        auto j = nlohmann::json::parse(raw_data);
+        auto msg = Protocol::MessageFactory::create(j);
+        if (msg) {
+            return GameCommand::from_protocol_message(*msg);
+        }
+    } catch (const nlohmann::json::exception&) {
+        // Ошибка парсинга
+    }
+    
+    GameCommand cmd;
+    cmd.is_valid = false;
+    return cmd;
+}
+
+std::string ProtocolParser::serialize(const std::string& status, const std::string& msg) {
     nlohmann::json jn;
     jn["status"] = status;
     jn["message"] = msg;
     return jn.dump() + "\n";
 }
 
-std::string Protocol::serialize_json(const nlohmann::json& jn) {
+std::string ProtocolParser::serialize_json(const nlohmann::json& jn) {
     return jn.dump() + "\n";
 }

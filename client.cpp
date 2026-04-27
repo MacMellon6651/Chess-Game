@@ -268,7 +268,7 @@ static bool drain_incoming(tcp::socket& sock, ClientUi& ui) {
 
 static bool send_and_process_one(tcp::socket& sock, ClientUi& ui, const nlohmann::json& payload) {
     boost::system::error_code ec;
-    auto data = Protocol::serialize_json(payload);
+    auto data = ProtocolParser::serialize_json(payload);
     boost::asio::write(sock, boost::asio::buffer(data), ec);
     if (ec) return false;
 
