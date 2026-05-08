@@ -235,6 +235,16 @@ static void process_incoming_line(ClientUi& ui, const std::string& line) {
                 ui.push_feed("[draw] declined by " + data.value("by", std::string("?")));
             } else if (event == "rating_update") {
                 ui.push_feed("[rating] now: " + std::to_string(data.value("rating", 0)));
+            } else if (event == "leaderboard") {
+                ui.push_feed("[leaderboard] top players:");
+                const auto& players = data.value("players", nlohmann::json::array());
+                int rank = 1;
+                for (const auto& p : players) {
+                    std::string name = p.value("nickname", std::string("?"));
+                    int rating = p.value("rating", 0);
+                    ui.push_feed("#" + std::to_string(rank) + " " + name + " (" + std::to_string(rating) + ")");
+                    ++rank;
+                }
             } else if (event == "check") {
                 ui.push_feed("[check] " + data.value("side", std::string("")) + " king is in check!");
             } else {
@@ -374,6 +384,11 @@ int main() {
                 dirty = true;
                 continue;
             }
+            if (line == "/leaderboard") {
+                if (!send_and_process_one(sock, ui, {{"type", "leaderboard"}})) break;
+                dirty = true;
+                continue;
+            }
             if (line == "/leave") {
                 ui.status = "menu";
                 if (!send_and_process_one(sock, ui, {{"type", "leave"}})) break;
@@ -428,7 +443,7 @@ int main() {
         sock.close(ignored);
         return 0;
     } catch (const std::exception& e) {
-        BOOST_LOG_TRIVIAL(error) << e.what();
+        std::cerr << "Client exception: " << e.what() << std::endl;
         return 1;
     }
 }
