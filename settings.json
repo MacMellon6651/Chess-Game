@@ -1,4 +1,9 @@
 {
     "host": "127.0.0.1",
-    "port": 18080
+    "port": 18080,
+    "ws_port": 18081,
+    "wss_port": 18082,
+    "ssl_enabled": true,
+    "ssl_cert_file": "certs/server.crt",
+    "ssl_key_file": "certs/server.key"
 }

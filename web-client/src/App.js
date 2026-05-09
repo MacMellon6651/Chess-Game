@@ -3,7 +3,6 @@ import { Chess } from 'chess.js';
 import './App.css';
 
 function App() {
-    // Состояния (без изменений)
     const [connected, setConnected] = useState(false);
     const [authorized, setAuthorized] = useState(false);
     const [nick, setNick] = useState('');
@@ -23,7 +22,6 @@ function App() {
     const gameRef = useRef(new Chess());
     const lastMoveRef = useRef(null);
 
-    // Загрузка позиции из FEN (без изменений)
     useEffect(() => {
         if (fen && fen !== 'start') {
             try {
@@ -35,7 +33,6 @@ function App() {
         }
     }, [fen]);
 
-    // Добавление сообщения (без изменений)
     const addMessage = useCallback((from, text, isError = false) => {
         const id = Date.now() + Math.random();
         setMessages(prev => [...prev, { from, text, time: new Date(), id, isError }]);
@@ -46,143 +43,105 @@ function App() {
         }
     }, []);
 
-    // Отправка сообщений (без изменений)
     const send = useCallback((msg) => {
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify(msg) + '\n');
         }
     }, []);
 
-    // ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ sendMove ==========
-    // Отправка хода
     const sendMove = useCallback((from, to, promotion = 'q') => {
-    if (!yourTurn || !inGame || moveInProgress) {
-        return false;
-    }
-    
-    // Защита от хода на ту же клетку
-    if (from === to) {
-        addMessage('Info', 'Cannot move to the same square', true);
-        setSelectedSquare(null);
-        setPossibleMoves([]);
-        return false;
-    }
-    
-    // Проверяем, не пытаемся ли мы пойти на клетку с нашей же фигурой
-    const targetPiece = gameRef.current.get(to);
-    const currentTurn = gameRef.current.turn();
-    if (targetPiece && targetPiece.color === (currentTurn === 'w' ? 'w' : 'b')) {
-        addMessage('Info', 'You already have a piece there!', true);
-        setSelectedSquare(null);
-        setPossibleMoves([]);
-        return false;
-    }
-    
-    // Проверяем легальность хода через chess.js
-    const testMove = gameRef.current.move({ from, to, promotion });
-    if (!testMove) {
-        addMessage('Error', 'Illegal move!', true);
-        setSelectedSquare(null);
-        setPossibleMoves([]);
-        return false;
-    }
-    // Отменяем тестовый ход
-    gameRef.current.undo();
-    
-    // Дополнительная проверка: целевая клетка должна быть в списке возможных ходов
-    const possibleMovesForPiece = gameRef.current.moves({ verbose: true, square: from });
-    const isValidTarget = possibleMovesForPiece.some(m => m.to === to);
-    if (!isValidTarget) {
-        addMessage('Error', 'Illegal move! You cannot move there', true);
-        setSelectedSquare(null);
-        setPossibleMoves([]);
-        return false;
-    }
-    
-    // Сохраняем информацию о ходе
-    lastMoveRef.current = { from, to, promotion };
-    setMoveInProgress(true);
-    
-    // Отправляем ход на сервер
-    send({ type: 'move', from, to, promotion });
-    
-    return true;
-}, [yourTurn, inGame, moveInProgress, send, addMessage]);
-
-    // ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ onSquareClick ==========
-// Обработчик клика по клетке
-const onSquareClick = useCallback((square) => {
-
-    if (!inGame) {
-        addMessage('Info', 'Join queue to start game');
-        return;
-    }
-    
-    if (!yourTurn) {
-        addMessage('Info', 'Wait for opponent\'s move');
-        return;
-    }
-
-    if (moveInProgress) {
-        addMessage('Info', 'Move in progress, please wait...');
-        return;
-    }
-
-    // Если есть выбранная клетка, пытаемся сделать ход
-    if (selectedSquare) {
-        // Проверяем, не пытаемся ли мы пойти на ту же клетку
-        if (selectedSquare === square) {
+        if (!yourTurn || !inGame || moveInProgress) {
+            return false;
+        }
+        if (from === to) {
+            addMessage('Info', 'Cannot move to the same square', true);
             setSelectedSquare(null);
             setPossibleMoves([]);
-            addMessage('Info', 'Move cancelled');
+            return false;
+        }
+        const targetPiece = gameRef.current.get(to);
+        const currentTurn = gameRef.current.turn();
+        if (targetPiece && targetPiece.color === (currentTurn === 'w' ? 'w' : 'b')) {
+            addMessage('Info', 'You already have a piece there!', true);
+            setSelectedSquare(null);
+            setPossibleMoves([]);
+            return false;
+        }
+        const testMove = gameRef.current.move({ from, to, promotion });
+        if (!testMove) {
+            addMessage('Error', 'Illegal move!', true);
+            setSelectedSquare(null);
+            setPossibleMoves([]);
+            return false;
+        }
+        gameRef.current.undo();
+        const possibleMovesForPiece = gameRef.current.moves({ verbose: true, square: from });
+        const isValidTarget = possibleMovesForPiece.some(m => m.to === to);
+        if (!isValidTarget) {
+            addMessage('Error', 'Illegal move! You cannot move there', true);
+            setSelectedSquare(null);
+            setPossibleMoves([]);
+            return false;
+        }
+        lastMoveRef.current = { from, to, promotion };
+        setMoveInProgress(true);
+        send({ type: 'move', from, to, promotion });
+        return true;
+    }, [yourTurn, inGame, moveInProgress, send, addMessage]);
+
+    const onSquareClick = useCallback((square) => {
+        if (!inGame) {
+            addMessage('Info', 'Join queue to start game');
             return;
         }
-        
-        // Проверяем, допустим ли ход на эту клетку
-        if (!possibleMoves.includes(square)) {
-            addMessage('Info', 'Illegal move! You cannot move there', true);
+        if (!yourTurn) {
+            addMessage('Info', 'Wait for opponent\'s move');
+            return;
+        }
+        if (moveInProgress) {
+            addMessage('Info', 'Move in progress, please wait...');
+            return;
+        }
+        if (selectedSquare) {
+            if (selectedSquare === square) {
+                setSelectedSquare(null);
+                setPossibleMoves([]);
+                addMessage('Info', 'Move cancelled');
+                return;
+            }
+            if (!possibleMoves.includes(square)) {
+                addMessage('Info', 'Illegal move! You cannot move there', true);
+                setSelectedSquare(null);
+                setPossibleMoves([]);
+                return;
+            }
+            sendMove(selectedSquare, square);
             setSelectedSquare(null);
             setPossibleMoves([]);
             return;
         }
-        
-        sendMove(selectedSquare, square);
-        setSelectedSquare(null);
-        setPossibleMoves([]);
-        return;
-    }
+        const piece = gameRef.current.get(square);
+        if (!piece) {
+            addMessage('Info', 'No piece on this square');
+            return;
+        }
+        const currentTurn = gameRef.current.turn();
+        const isWhitePiece = piece.color === 'w';
+        const isBlackPiece = piece.color === 'b';
+        const isCorrectColor = (currentTurn === 'w' && isWhitePiece) || (currentTurn === 'b' && isBlackPiece);
+        if (!isCorrectColor) {
+            addMessage('Info', `Not your piece! ${currentTurn === 'w' ? 'White' : 'Black'} to move`);
+            return;
+        }
+        setSelectedSquare(square);
+        const moves = gameRef.current.moves({ verbose: true, square: square });
+        const toSquares = moves.map(m => m.to);
+        setPossibleMoves(toSquares);
+        if (toSquares.length === 0) {
+            addMessage('Info', 'This piece has no legal moves', true);
+        }
+    }, [inGame, yourTurn, moveInProgress, selectedSquare, possibleMoves, sendMove, addMessage]);
 
-    // Проверяем, есть ли фигура на клетке
-    const piece = gameRef.current.get(square);
-    if (!piece) {
-        addMessage('Info', 'No piece on this square');
-        return;
-    }
-
-    // Определяем, чей сейчас ход
-    const currentTurn = gameRef.current.turn();
-    const isWhitePiece = piece.color === 'w';
-    const isBlackPiece = piece.color === 'b';
-    const isCorrectColor = (currentTurn === 'w' && isWhitePiece) || (currentTurn === 'b' && isBlackPiece);
-
-    if (!isCorrectColor) {
-        addMessage('Info', `Not your piece! ${currentTurn === 'w' ? 'White' : 'Black'} to move`);
-        return;
-    }
-
-    // Выбираем фигуру и получаем возможные ходы
-    setSelectedSquare(square);
-    const moves = gameRef.current.moves({ verbose: true, square: square });
-    const toSquares = moves.map(m => m.to);
-    setPossibleMoves(toSquares);
-    
-    if (toSquares.length === 0) {
-        addMessage('Info', 'This piece has no legal moves', true);
-    } else {
-    }
-}, [inGame, yourTurn, moveInProgress, selectedSquare, possibleMoves, sendMove, addMessage]);
-
-    // Сброс выбора при смене хода (без изменений)
     useEffect(() => {
         if (yourTurn && !moveInProgress) {
             setSelectedSquare(null);
@@ -190,7 +149,6 @@ const onSquareClick = useCallback((square) => {
         }
     }, [yourTurn, moveInProgress]);
 
-    // Получение символа фигуры (без изменений)
     const getPieceChar = (piece) => {
         if (!piece) return '';
         const symbols = {
@@ -211,11 +169,9 @@ const onSquareClick = useCallback((square) => {
         return symbols[key];
     };
 
-    // Отрисовка доски (без изменений)
     const renderBoard = () => {
         const board = gameRef.current.board();
         const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-        
         return (
             <div className="chess-board-custom">
                 {board.map((row, rank) => (
@@ -226,7 +182,6 @@ const onSquareClick = useCallback((square) => {
                             const isPossibleMove = possibleMoves.includes(square);
                             const isEven = (rank + file) % 2 === 0;
                             const isCapture = isPossibleMove && gameRef.current.get(square);
-                            
                             return (
                                 <div
                                     key={square}
@@ -245,7 +200,6 @@ const onSquareClick = useCallback((square) => {
         );
     };
 
-    // Команды (без изменений)
     const joinQueue = () => {
         if (!isSearching && !inGame) {
             setIsSearching(true);
@@ -276,22 +230,21 @@ const onSquareClick = useCallback((square) => {
             send({ type: 'draw', action: 'offer' });
         }
     };
-    
     const acceptDraw = () => {
         if (inGame) {
             send({ type: 'draw', action: 'accept' });
         }
     };
-    
     const declineDraw = () => {
         if (inGame) {
             send({ type: 'draw', action: 'decline' });
         }
     };
 
-    // Подключение WebSocket (без изменений)
     const connect = useCallback((nickname, password) => {
-        const ws = new WebSocket('ws://localhost:18081');
+        const explicitUrl = process.env.REACT_APP_WS_URL;
+        const socketUrl = explicitUrl || 'wss://localhost:18082';
+        const ws = new WebSocket(socketUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
@@ -304,7 +257,6 @@ const onSquareClick = useCallback((square) => {
         ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-
                 if (data.status === 'ok') {
                     if (data.message === 'authorized') {
                         setAuthorized(true);
@@ -334,7 +286,6 @@ const onSquareClick = useCallback((square) => {
                 } else if (data.type === 'event') {
                     const ev = data.event;
                     const d = data.data;
-
                     if (ev === 'match_found') {
                         setIsSearching(false);
                         setInGame(true);
@@ -355,7 +306,6 @@ const onSquareClick = useCallback((square) => {
                             addMessage('System', '♚ Black - waiting for white\'s move');
                         }
                     } else if (ev === 'move') {
-                        
                         if (d.by !== nickname) {
                             try {
                                 gameRef.current.load(d.fen);
@@ -382,7 +332,6 @@ const onSquareClick = useCallback((square) => {
                                 setMoveInProgress(false);
                             }
                         }
-                        
                         addMessage('Game', `${d.by}: ${d.from} → ${d.to}`);
                     } else if (ev === 'game_over') {
                         setInGame(false);
@@ -445,7 +394,6 @@ const onSquareClick = useCallback((square) => {
         };
     }, [send, addMessage]);
 
-    // Форма входа
     const [loginNick, setLoginNick] = useState('');
     const [loginPass, setLoginPass] = useState('');
 

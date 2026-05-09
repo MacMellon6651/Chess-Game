@@ -13,7 +13,10 @@ int main() {
         server.start_websocket_server();
 
         BOOST_LOG_TRIVIAL(info) << "TCP Server on " << settings.host << ":" << settings.port;
-        BOOST_LOG_TRIVIAL(info) << "WebSocket Server on " << settings.host << ":18081";
+        BOOST_LOG_TRIVIAL(info) << "WebSocket Server on " << settings.host << ":" << settings.ws_port;
+        if (settings.ssl_enabled) {
+            BOOST_LOG_TRIVIAL(info) << "Secure WebSocket Server on " << settings.host << ":" << settings.wss_port;
+        }
 
         io.run();
     } catch (const std::exception& e) {

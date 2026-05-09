@@ -1,6 +1,11 @@
 {
+  "scripts": {
+    "generate:wss-cert": "powershell -ExecutionPolicy Bypass -File \"./certs/generate-self-signed-cert.ps1\"",
+    "start:wss-proxy": "node ./ssl-proxy.js"
+  },
   "dependencies": {
     "chess.js": "^1.4.0",
+    "http-proxy": "^1.18.1",
     "react-chessboard": "^5.10.0"
   }
 }
