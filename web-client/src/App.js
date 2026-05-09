@@ -28,9 +28,7 @@ function App() {
         if (fen && fen !== 'start') {
             try {
                 gameRef.current.load(fen);
-                console.log('Board loaded, turn:', gameRef.current.turn(), 'moveInProgress:', moveInProgress);
             } catch (e) {
-                console.error('Invalid FEN:', fen);
             }
         } else if (fen === 'start') {
             gameRef.current = new Chess();
@@ -52,7 +50,6 @@ function App() {
     const send = useCallback((msg) => {
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify(msg) + '\n');
-            console.log('📤 Sent:', msg);
         }
     }, []);
 
@@ -60,7 +57,6 @@ function App() {
     // Отправка хода
     const sendMove = useCallback((from, to, promotion = 'q') => {
     if (!yourTurn || !inGame || moveInProgress) {
-        console.log('Cannot move: conditions not met', { yourTurn, inGame, moveInProgress });
         return false;
     }
     
@@ -108,7 +104,6 @@ function App() {
     setMoveInProgress(true);
     
     // Отправляем ход на сервер
-    console.log(`🎯 Sending move: ${from} → ${to}`);
     send({ type: 'move', from, to, promotion });
     
     return true;
@@ -117,7 +112,6 @@ function App() {
     // ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ onSquareClick ==========
 // Обработчик клика по клетке
 const onSquareClick = useCallback((square) => {
-    console.log(`🖱️ Click: ${square}, inGame: ${inGame}, yourTurn: ${yourTurn}, moveInProgress: ${moveInProgress}`);
 
     if (!inGame) {
         addMessage('Info', 'Join queue to start game');
@@ -152,7 +146,6 @@ const onSquareClick = useCallback((square) => {
             return;
         }
         
-        console.log(`🔨 Trying move: ${selectedSquare} → ${square}`);
         sendMove(selectedSquare, square);
         setSelectedSquare(null);
         setPossibleMoves([]);
@@ -186,7 +179,6 @@ const onSquareClick = useCallback((square) => {
     if (toSquares.length === 0) {
         addMessage('Info', 'This piece has no legal moves', true);
     } else {
-        console.log(`✨ Selected ${square}, possible moves:`, toSquares);
     }
 }, [inGame, yourTurn, moveInProgress, selectedSquare, possibleMoves, sendMove, addMessage]);
 
@@ -255,7 +247,6 @@ const onSquareClick = useCallback((square) => {
 
     // Команды (без изменений)
     const joinQueue = () => {
-        console.log('🎮 Joining queue');
         if (!isSearching && !inGame) {
             setIsSearching(true);
             send({ type: 'queue' });
@@ -263,7 +254,6 @@ const onSquareClick = useCallback((square) => {
     };
 
     const leaveQueue = () => {
-        console.log('🚪 Leaving');
         setIsSearching(false);
         send({ type: 'leave' });
         setInGame(false);
@@ -301,12 +291,10 @@ const onSquareClick = useCallback((square) => {
 
     // Подключение WebSocket (без изменений)
     const connect = useCallback((nickname, password) => {
-        console.log('🔌 Connecting...');
         const ws = new WebSocket('ws://localhost:18081');
         wsRef.current = ws;
 
         ws.onopen = () => {
-            console.log('✅ Connected');
             setConnected(true);
             setNick(nickname);
             addMessage('System', 'Connected to server');
@@ -316,7 +304,6 @@ const onSquareClick = useCallback((square) => {
         ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                console.log('📥:', data);
 
                 if (data.status === 'ok') {
                     if (data.message === 'authorized') {
@@ -349,7 +336,6 @@ const onSquareClick = useCallback((square) => {
                     const d = data.data;
 
                     if (ev === 'match_found') {
-                        console.log('🎯 Match found!');
                         setIsSearching(false);
                         setInGame(true);
                         setOpponent(d.opponent);
@@ -369,7 +355,6 @@ const onSquareClick = useCallback((square) => {
                             addMessage('System', '♚ Black - waiting for white\'s move');
                         }
                     } else if (ev === 'move') {
-                        console.log(`🏁 Move: ${d.from}→${d.to} by ${d.by}`);
                         
                         if (d.by !== nickname) {
                             try {
@@ -379,9 +364,7 @@ const onSquareClick = useCallback((square) => {
                                 setMoveInProgress(false);
                                 setSelectedSquare(null);
                                 setPossibleMoves([]);
-                                console.log('Opponent move applied, your turn now');
                             } catch (e) {
-                                console.error('Failed to apply opponent move:', e);
                                 setFen(d.fen);
                                 setYourTurn(true);
                                 setMoveInProgress(false);
@@ -394,9 +377,7 @@ const onSquareClick = useCallback((square) => {
                                 setMoveInProgress(false);
                                 setSelectedSquare(null);
                                 setPossibleMoves([]);
-                                console.log('Our move confirmed by server');
                             } catch (e) {
-                                console.error('Failed to apply our move:', e);
                                 setFen(d.fen);
                                 setMoveInProgress(false);
                             }
@@ -438,7 +419,6 @@ const onSquareClick = useCallback((square) => {
                         addMessage('System', '⚠️ Opponent disconnected! You win!');
                     }
                 } else if (data.status === 'error') {
-                    console.log('Error from server:', data.message);
                     if (data.message === 'Illegal move' || data.message === 'Not your turn' || data.message === 'Move failed') {
                         addMessage('Error', data.message, true);
                         setMoveInProgress(false);
@@ -452,12 +432,10 @@ const onSquareClick = useCallback((square) => {
                     }
                 }
             } catch (e) {
-                console.error('Parse error:', e);
             }
         };
 
         ws.onclose = () => {
-            console.log('🔌 Disconnected');
             setConnected(false);
             setAuthorized(false);
             setIsSearching(false);
