@@ -8,6 +8,7 @@ import os
 
 ADDR = "127.0.0.1"
 PORT = 18080
+# Общее количество запросов в нагрузочном тесте
 N = 10000
 
 SERVER_PROC = None
@@ -28,7 +29,7 @@ def teardown_module(module):
             SERVER_PROC.kill()
     SERVER_PROC = None
 
-# Тест Отправка пачки сообщений в одном соединении
+# Отправка пачки ping-запросов в одном TCP-соединении
 def send_burst(count):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.connect((ADDR, PORT))
@@ -38,19 +39,40 @@ def send_burst(count):
         for i in range(count):
             msg = json.dumps({"type": "ping", "id": i}) + "\n"
             sock.sendall(msg.encode())
-            sock.recv(1024) 
+            # ожидаем ответ pong; если сервер "умрет", recv выбросит исключение
+            data = sock.recv(1024)
+            assert data, "server closed connection during stress ping"
 
-#Тест Сервер выдерживает N быстрых запросов
+# Тест: сервер выдерживает N быстрых ping-запросов
 def test_stress_load():
     send_burst(N)
 
-#Тест Cервер работает с несколькими клиентами одновременно
+# Тест: сервер работает с несколькими клиентами одновременно
 def test_concurrent_clients():
     threads = []
     for _ in range(10):
-        t = threading.Thread(target=send_burst, args=(20,))
+        t = threading.Thread(target=send_burst, args=(200,))
         threads.append(t)
         t.start()
     
     for t in threads:
-        t.join() # Жду завершения потоков
+        t.join()  # ждем завершения потоков
+
+
+def test_invalid_payload_does_not_crash_server():
+    """
+    Отправляем заведомо некорректные данные и убеждаемся,
+    что сервер не падает и по‑прежнему отвечает на корректные запросы.
+    """
+    # шлём мусор
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.connect((ADDR, PORT))
+        sock.sendall(b"this is not json at all\n")
+        # сервер может оборвать соединение или вернуть ошибку — нас устраивает любой вариант
+        try:
+            sock.recv(1024)
+        except OSError:
+            pass
+
+    # после этого сервер все еще должен принимать обычные ping
+    send_burst(50)
