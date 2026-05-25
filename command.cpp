@@ -44,8 +44,18 @@ GameCommand GameCommand::from_protocol_message(const Protocol::Message& msg) {
 }
 
 GameCommand ProtocolParser::parse(const std::string& raw_data) {
+    std::string data = raw_data;
+    while (!data.empty() && (data.back() == '\n' || data.back() == '\r' || data.back() == ' ')) {
+        data.pop_back();
+    }
+    size_t start = 0;
+    while (start < data.size() && (data[start] == '\n' || data[start] == '\r' || data[start] == ' ')) {
+        ++start;
+    }
+    data = data.substr(start);
+
     try {
-        auto j = nlohmann::json::parse(raw_data);
+        auto j = nlohmann::json::parse(data);
         auto msg = Protocol::MessageFactory::create(j);
         if (msg) {
             return GameCommand::from_protocol_message(*msg);
